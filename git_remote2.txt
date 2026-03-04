@@ -1,0 +1,2 @@
+﻿origin	https://github.com/Tharunnagabramhagna/BUDDY-AI-Advanced-ai-agent-.git (fetch)
+origin	https://github.com/Tharunnagabramhagna/BUDDY-AI-Advanced-ai-agent-.git (push)

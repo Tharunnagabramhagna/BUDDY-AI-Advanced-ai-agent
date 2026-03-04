@@ -50,14 +50,16 @@ export default function Spotlight() {
                     <div className="w-5 h-5 rounded-full bg-gradient-to-b from-slate-700 to-slate-800 border border-slate-600/50 shadow-inner flex shrink-0 items-center justify-center overflow-hidden">
                         <div className="w-full h-full bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-slate-400/20 via-transparent to-transparent opacity-60" />
                     </div>
-                    <p className="text-slate-500/70 text-xs font-normal">
+                    <p className="text-slate-500/40 text-[11px] font-normal">
                         What can I help you with today?
                     </p>
                 </div>
 
                 {/* Input area */}
-                <div className="flex items-center px-5 pb-6 pt-1">
-                    <Terminal className="text-slate-500 mr-3 shrink-0" size={24} strokeWidth={1.5} />
+                <div className="flex items-center px-5 pb-6 pt-1 relative group">
+                    {/* Soft focus glow effect around input field */}
+                    <div className="absolute inset-x-5 inset-y-0 bottom-5 rounded-lg opacity-0 group-focus-within:opacity-100 group-focus-within:shadow-[0_0_25px_rgba(255,255,255,0.04)] transition-all duration-200 pointer-events-none" />
+                    <Terminal className="text-slate-500 mr-3 shrink-0 relative z-10" size={24} strokeWidth={1.5} />
                     <input
                         ref={inputRef}
                         type="text"
@@ -65,18 +67,21 @@ export default function Spotlight() {
                         onChange={(e) => setCommand(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Ask Buddy..."
-                        className="flex-1 bg-transparent border-none text-slate-100 text-3xl font-normal placeholder:text-slate-600 focus:outline-none w-full"
+                        className="flex-1 bg-transparent border-none text-slate-100 text-3xl font-normal placeholder:text-slate-600 focus:outline-none w-full relative z-10"
                     />
-                    <Mic className="text-slate-600 ml-3 shrink-0 hover:text-slate-400 transition-colors cursor-pointer" size={20} strokeWidth={1.5} />
+                    <Mic className="text-slate-600 ml-3 shrink-0 hover:text-slate-400 transition-colors duration-200 cursor-pointer relative z-10" size={20} strokeWidth={1.5} />
                 </div>
 
                 {/* Execution Plan Section (Smooth slide down animation) */}
                 <div
-                    className={`grid transition-all duration-300 ease-in-out ${isExecuting ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                    className={`grid transition-all duration-200 ease-in-out ${isExecuting ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
                         }`}
                 >
                     <div className="overflow-hidden">
-                        <div className="border-t border-slate-700/50 bg-slate-800/30">
+                        {/* Subtle Divider Line */}
+                        <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-slate-600/40 to-transparent" />
+
+                        <div className="bg-slate-800/30">
                             <div className="px-5 py-4">
                                 <div className="flex items-center gap-2 mb-3">
                                     <Sparkles size={16} className="text-indigo-400" />
@@ -101,14 +106,14 @@ export default function Spotlight() {
                                 <div className="flex items-center gap-3 justify-end">
                                     <button
                                         onClick={handleCancel}
-                                        className="px-4 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-700/60 hover:text-white active:scale-95 rounded-lg transition-all border border-transparent hover:border-slate-600/50 flex items-center gap-1.5"
+                                        className="px-4 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-700/60 hover:text-white active:scale-95 rounded-lg transition-all duration-200 border border-transparent hover:border-slate-600/50 flex items-center gap-1.5"
                                     >
                                         <X size={14} />
                                         Cancel
                                     </button>
                                     <button
                                         onClick={handleApprove}
-                                        className="px-4 py-1.5 text-sm font-medium bg-indigo-500 hover:bg-indigo-400 hover:shadow-indigo-500/30 active:scale-95 text-white rounded-lg transition-all shadow-sm shadow-indigo-500/20 flex items-center gap-1.5"
+                                        className="px-4 py-1.5 text-sm font-medium bg-indigo-500 hover:bg-indigo-400 hover:shadow-[0_0_15px_rgba(99,102,241,0.3)] hover:scale-[1.03] active:scale-95 text-white rounded-lg transition-all duration-200 shadow-sm shadow-indigo-500/20 flex items-center gap-1.5"
                                     >
                                         <Check size={14} />
                                         Approve
