@@ -21,6 +21,10 @@ export default function Spotlight() {
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && command.trim() !== '') {
             setIsExecuting(true);
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send("buddy-command", command);
+            }
         }
         if (e.key === 'Escape') {
             setCommand('');

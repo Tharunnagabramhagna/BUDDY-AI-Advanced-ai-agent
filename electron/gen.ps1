@@ -1,0 +1,10 @@
+Add-Type -AssemblyName System.Drawing
+$bmp = New-Object System.Drawing.Bitmap(32, 32)
+$graphics = [System.Drawing.Graphics]::FromImage($bmp)
+$graphics.Clear([System.Drawing.Color]::Black)
+$font = New-Object System.Drawing.Font("Arial", 20, [System.Drawing.FontStyle]::Bold)
+$brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+$graphics.DrawString("B", $font, $brush, 0.0, 0.0)
+$bmp.Save("c:\Users\tarun\OneDrive\Desktop\BUDDY-AI\electron\tray.png", [System.Drawing.Imaging.ImageFormat]::Png)
+$graphics.Dispose()
+$bmp.Dispose()
