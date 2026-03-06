@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 
 export default function Spotlight() {
     const [command, setCommand] = useState('');
+    const [storedCommand, setStoredCommand] = useState('');
     const [isExecuting, setIsExecuting] = useState(false);
     const inputRef = useRef(null);
 
@@ -20,26 +21,30 @@ export default function Spotlight() {
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && command.trim() !== '') {
+            setStoredCommand(command);
             setIsExecuting(true);
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                ipcRenderer.send("buddy-command", command);
-            }
         }
         if (e.key === 'Escape') {
             setCommand('');
+            setStoredCommand('');
             setIsExecuting(false);
         }
     };
 
     const handleCancel = () => {
         setIsExecuting(false);
+        setStoredCommand('');
     };
 
     const handleApprove = () => {
-        console.log('Approved execution plan for:', command);
+        console.log('Approved execution plan for:', storedCommand);
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.send("buddy-command", storedCommand);
+        }
         setIsExecuting(false);
         setCommand('');
+        setStoredCommand('');
     };
 
     return (
@@ -91,6 +96,11 @@ export default function Spotlight() {
                                     <Sparkles size={16} className="text-indigo-400" />
                                     <h3 className="text-sm font-medium text-slate-300">Execution Plan</h3>
                                 </div>
+                                {storedCommand && (
+                                    <div className="mb-3 px-3 py-2 bg-slate-900/60 rounded-md text-slate-300 text-sm border border-slate-700/50">
+                                        Command: <span className="text-white font-mono ml-1">{storedCommand}</span>
+                                    </div>
+                                )}
 
                                 <ul className="space-y-2 mb-5">
                                     <li className="text-sm text-slate-400 flex items-start gap-2">
