@@ -1,0 +1,6 @@
+
+> buddy-ai-temp@0.0.0 electron
+> electron electron/main.cjs
+
+
+[16096:0312/234124.990:ERROR:third_party\crashpad\crashpad\client\crashpad_client_win.cc:867] not connected

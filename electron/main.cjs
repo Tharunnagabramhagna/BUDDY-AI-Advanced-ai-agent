@@ -1,6 +1,12 @@
+require("dotenv").config()
+console.log("OPENAI_API_KEY loaded:", process.env.OPENAI_API_KEY ? "YES" : "NO")
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain } = require("electron")
 const path = require("path")
 const { exec } = require("child_process")
+const { GoogleGenerativeAI } = require("@google/generative-ai")
+
+const API_KEY = process.env.VITE_GEMINI_API_KEY || "AIzaSyDr_qE80_xKlv1E4eE_J088pZf70vL9oGk";
+const genAI = new GoogleGenerativeAI(API_KEY);
 
 let mainWindow
 let tray
@@ -16,12 +22,17 @@ function createWindow() {
         alwaysOnTop: true,
         show: false, // start hidden
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            preload: path.join(__dirname, "preload.js"),
+            contextIsolation: true,
+            nodeIntegration: false
         }
     })
 
     mainWindow.loadURL("http://localhost:5173")
+
+    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+        console.log(`[Renderer] ${message}`);
+    });
 
     mainWindow.on("close", (event) => {
         if (!app.isQuiting) {
@@ -86,7 +97,7 @@ function registerShortcut() {
 
 }
 
-ipcMain.on("buddy-command", (event, command) => {
+function handleCommand(command) {
     console.log("Buddy received command:", command)
 
     const lower = command.toLowerCase()
@@ -140,14 +151,27 @@ ipcMain.on("buddy-command", (event, command) => {
             }
         })
     }
+}
+
+ipcMain.on("buddy-command", (event, command) => {
+    handleCommand(command)
 })
 
-app.whenReady().then(() => {
+ipcMain.handle("ask-buddy", async (event, prompt) => {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent(prompt);
+        return result.response.text();
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        throw error;
+    }
+});
 
+app.whenReady().then(() => {
     createTray()
     createWindow()
     registerShortcut()
-
 })
 
 app.on("will-quit", () => {

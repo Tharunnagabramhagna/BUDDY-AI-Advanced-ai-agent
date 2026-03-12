@@ -1,7 +1,7 @@
 import { Terminal, Check, X, Sparkles, Mic } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
-export default function Spotlight() {
+const Spotlight = React.memo(() => {
     const [command, setCommand] = useState('');
     const [storedCommand, setStoredCommand] = useState('');
     const [isExecuting, setIsExecuting] = useState(false);
@@ -38,7 +38,9 @@ export default function Spotlight() {
 
     const handleApprove = () => {
         console.log('Approved execution plan for:', storedCommand);
-        if (window.require) {
+        if (window.electronAPI && window.electronAPI.sendBuddyCommand) {
+            window.electronAPI.sendBuddyCommand(storedCommand);
+        } else if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.send("buddy-command", storedCommand);
         }
@@ -78,7 +80,9 @@ export default function Spotlight() {
                         placeholder="Ask Buddy..."
                         className="flex-1 bg-transparent border-none text-slate-100 text-3xl font-normal placeholder:text-slate-600 focus:outline-none w-full relative z-10"
                     />
-                    <Mic className="text-slate-600 ml-3 shrink-0 hover:text-slate-400 transition-colors duration-200 cursor-pointer relative z-10" size={20} strokeWidth={1.5} />
+                    <button className="ml-3 text-slate-500 hover:text-slate-300 transition shrink-0 relative z-10">
+                        <Mic size={20} strokeWidth={1.5} />
+                    </button>
                 </div>
 
                 {/* Execution Plan Section (Smooth slide down animation) */}
@@ -140,4 +144,6 @@ export default function Spotlight() {
             </div>
         </div>
     );
-}
+});
+
+export default Spotlight;

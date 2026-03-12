@@ -1,0 +1,17 @@
+
+> buddy-ai-temp@0.0.0 electron
+> electron electron/main.cjs
+
+
+[dotenv@17.3.1] injecting env (1) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+OPENAI_API_KEY loaded: YES
+[6228:0312/234251.937:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Access is denied. (0x5)
+[6228:0312/234251.942:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Access is denied. (0x5)
+[6228:0312/234251.943:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Access is denied. (0x5)
+[6228:0312/234251.943:ERROR:net\disk_cache\disk_cache.cc:236] Unable to create cache
+[6228:0312/234251.944:ERROR:gpu\ipc\host\gpu_disk_cache.cc:724] Gpu Cache Creation failed: -2
+[6228:0312/234251.944:ERROR:net\disk_cache\disk_cache.cc:236] Unable to create cache
+[6228:0312/234251.944:ERROR:gpu\ipc\host\gpu_disk_cache.cc:724] Gpu Cache Creation failed: -2
+[6228:0312/234251.944:ERROR:net\disk_cache\disk_cache.cc:236] Unable to create cache
+[6228:0312/234251.944:ERROR:gpu\ipc\host\gpu_disk_cache.cc:724] Gpu Cache Creation failed: -2
+Terminate batch job (Y/N)? Terminate batch job (Y/N)? C:\Users\tarun\OneDrive\Desktop\BUDDY-AI\node_modules\electron\dist\electron.exe exited with signal SIGINT

@@ -1,0 +1,19 @@
+
+> buddy-ai-temp@0.0.0 electron
+> electron electron/main.cjs
+
+
+[dotenv@17.3.1] injecting env (1) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+OPENAI_API_KEY loaded: YES
+App threw an error during load
+Error: Error in native callback
+    at process.func [as dlopen] (node:electron/js2c/node_init:2:2617)
+    at Module._extensions..node (node:internal/modules/cjs/loader:1980:18)
+    at Object.func [as .node] (node:electron/js2c/node_init:2:2617)
+    at Module.load (node:internal/modules/cjs/loader:1540:32)
+    at Module._load (node:internal/modules/cjs/loader:1342:12)
+    at c._load (node:electron/js2c/node_init:2:17999)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:262:19)
+    at Module.require (node:internal/modules/cjs/loader:1563:12)
+    at require (node:internal/modules/helpers:152:16)
+    at load (C:\Users\tarun\OneDrive\Desktop\BUDDY-AI\node_modules\node-gyp-build\node-gyp-build.js:22:10)

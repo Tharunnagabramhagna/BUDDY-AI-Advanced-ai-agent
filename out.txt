@@ -1,0 +1,21 @@
+
+> buddy-ai-temp@0.0.0 electron
+> electron electron/main.cjs
+
+
+[dotenv@17.3.1] injecting env (1) from .env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+OPENAI_API_KEY loaded: YES
+App threw an error during load
+ReferenceError: require is not defined in ES module scope, you can use import instead
+This file is being treated as an ES module because it has a '.js' file extension and 'C:\Users\tarun\OneDrive\Desktop\BUDDY-AI\package.json' contains "type": "module". To treat it as a CommonJS script, rename it to use the '.cjs' file extension.
+    at file:///C:/Users/tarun/OneDrive/Desktop/BUDDY-AI/voice/wakeword.js:1:23
+    at ModuleJobSync.runSync (node:internal/modules/esm/module_job:534:37)
+    at ModuleLoader.importSyncForRequire (node:internal/modules/esm/loader:388:47)
+    at loadESMFromCJS (node:internal/modules/cjs/loader:1636:24)
+    at Module._compile (node:internal/modules/cjs/loader:1801:5)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1953:10)
+    at Module.load (node:internal/modules/cjs/loader:1540:32)
+    at Module._load (node:internal/modules/cjs/loader:1342:12)
+    at c._load (node:electron/js2c/node_init:2:17999)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:262:19)
+Terminate batch job (Y/N)? Terminate batch job (Y/N)? C:\Users\tarun\OneDrive\Desktop\BUDDY-AI\node_modules\electron\dist\electron.exe exited with signal SIGINT
