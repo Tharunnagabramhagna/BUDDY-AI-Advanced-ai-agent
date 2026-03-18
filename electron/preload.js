@@ -7,5 +7,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 })
 
 contextBridge.exposeInMainWorld("buddyAPI", {
-    askBuddy: (prompt) => ipcRenderer.invoke("ask-buddy", prompt)
+    askBuddy: (prompt, history = []) => ipcRenderer.invoke("ask-buddy", prompt, history)
+})
+
+contextBridge.exposeInMainWorld("buddyWindow", {
+    minimize: () => ipcRenderer.invoke("window-minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window-toggle-maximize"),
+    close: () => ipcRenderer.invoke("window-close")
 })

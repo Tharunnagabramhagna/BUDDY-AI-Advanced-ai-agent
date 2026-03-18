@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron": "electron electron/main.cjs"
+    "electron": "set \"ELECTRON_RUN_AS_NODE=\" && electron electron/main.cjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
