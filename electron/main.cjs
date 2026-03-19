@@ -1,23 +1,31 @@
-require("dotenv").config()
+const path = require("path")
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") })
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 console.log("OPENAI_API_KEY loaded:", process.env.OPENAI_API_KEY ? "YES" : "NO")
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain } = require("electron")
 app.disableHardwareAcceleration()
 const fs = require("fs")
 const http = require("http")
-const path = require("path")
 const { exec } = require("child_process")
 const { GoogleGenerativeAI } = require("@google/generative-ai")
 
 const API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 if (!API_KEY) console.error("ERROR: No Gemini API key found in .env!");
-const genAI = new GoogleGenerativeAI(API_KEY);
+const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
 console.log("Gemini key loaded:", API_KEY ? API_KEY.substring(0, 8) + "..." : "MISSING");
 
 let mainWindow
 let tray
+let isCreatingWindow = false
 const DEV_SERVER_URL = "http://localhost:5173"
 const DIST_INDEX_PATH = path.join(__dirname, "..", "dist", "index.html")
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+    console.log("Another Buddy instance is already running. Quitting duplicate instance.")
+    app.quit()
+}
 
 process.on("uncaughtException", (error) => {
     console.error("Uncaught exception in main process:", error);
@@ -63,6 +71,10 @@ function hideMainWindow() {
 }
 
 async function loadRenderer() {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        throw new Error("Cannot load renderer without an active window.")
+    }
+
     const canUseDevServer = await isDevServerAvailable(DEV_SERVER_URL)
 
     if (canUseDevServer) {
@@ -81,65 +93,65 @@ async function loadRenderer() {
 }
 
 async function createWindow() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        return mainWindow
+    }
+
+    if (isCreatingWindow) {
+        return mainWindow
+    }
+
+    isCreatingWindow = true
     console.log("Creating Buddy window");
     let hasRevealedWindow = false
 
-    mainWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
-        frame: false,
-        transparent: true,
-        backgroundColor: "#00000000",
-        resizable: true,
-        maximizable: true,
-        alwaysOnTop: true,
-        show: false, // start hidden
-        webPreferences: {
-            preload: path.join(__dirname, "preload.js"),
-            contextIsolation: true,
-            nodeIntegration: false
+    try {
+        mainWindow = new BrowserWindow({
+            width: 1200,
+            height: 800,
+            show: false,
+            backgroundColor: "#0b1120",
+            webPreferences: {
+                preload: path.join(__dirname, "preload.js"),
+                contextIsolation: true,
+                nodeIntegration: false
+            }
+        })
+
+        mainWindow.webContents.on("did-fail-load", (_, errorCode, errorDescription) => {
+            console.error("Buddy window failed to load:", errorCode, errorDescription);
+        });
+
+        const revealWindow = () => {
+            if (!mainWindow || mainWindow.isDestroyed() || hasRevealedWindow) return
+
+            hasRevealedWindow = true
+            console.log("Revealing Buddy window");
+            showMainWindow()
         }
-    })
 
-    mainWindow.webContents.on("did-fail-load", (_, errorCode, errorDescription) => {
-        console.error("Buddy window failed to load:", errorCode, errorDescription);
-    });
+        mainWindow.webContents.once("did-finish-load", () => {
+            console.log("Buddy window finished loading");
+            console.log("Buddy window ready to show");
+            revealWindow()
+        })
 
-    const revealWindow = () => {
-        if (!mainWindow || hasRevealedWindow) return
+        mainWindow.on("close", (event) => {
+            if (!app.isQuiting) {
+                event.preventDefault()
+                hideMainWindow()
+            }
+        })
 
-        hasRevealedWindow = true
-        console.log("Revealing Buddy window");
-        showMainWindow()
+        mainWindow.on("closed", () => {
+            mainWindow = null
+        })
+
+        await loadRenderer()
+        return mainWindow
+    } finally {
+        isCreatingWindow = false
     }
-
-    mainWindow.once("ready-to-show", () => {
-        console.log("Buddy window ready to show");
-        revealWindow()
-    })
-
-    mainWindow.webContents.once("did-finish-load", () => {
-        console.log("Buddy window finished loading");
-        setTimeout(revealWindow, 120)
-    })
-
-    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-        console.log(`[Renderer] ${message}`);
-    });
-
-    mainWindow.on("close", (event) => {
-        if (!app.isQuiting) {
-            event.preventDefault()
-            hideMainWindow()
-        }
-    })
-
-    mainWindow.on("closed", () => {
-        mainWindow = null
-    })
-
-    await loadRenderer()
-    setTimeout(revealWindow, 600)
 }
 
 function createTray() {
@@ -305,6 +317,10 @@ ipcMain.handle("window-close", () => {
 
 ipcMain.handle("ask-buddy", async (event, prompt, history = []) => {
     try {
+        if (!genAI) {
+            throw new Error("Gemini API key is missing.")
+        }
+
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const validHistory = (Array.isArray(history) ? history : []).filter(
             m => m && m.role && Array.isArray(m.parts) && m.parts.length > 0 && m.parts[0].text
@@ -327,8 +343,13 @@ app.whenReady().then(async () => {
     console.error("Buddy failed during app startup:", error)
 })
 
+app.on("second-instance", () => {
+    console.log("Second Buddy instance requested focus")
+    showMainWindow()
+})
+
 app.on("activate", async () => {
-    if (!mainWindow) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
         await createWindow()
         return
     }
@@ -338,6 +359,7 @@ app.on("activate", async () => {
 
 app.on("window-all-closed", () => {
     console.log("All Buddy windows closed");
+    if (process.platform !== "darwin") app.quit()
 });
 
 app.on("browser-window-created", () => {

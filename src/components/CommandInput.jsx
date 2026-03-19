@@ -29,6 +29,10 @@ const CommandInput = memo(forwardRef(function CommandInput({ isLoading, onEscape
         }
     }, [handleSubmit, onEscape]);
 
+    const handleButtonClick = useCallback(() => {
+        void handleSubmit();
+    }, [handleSubmit]);
+
     useImperativeHandle(ref, () => ({
         clear() {
             setCommand('');
@@ -65,7 +69,7 @@ const CommandInput = memo(forwardRef(function CommandInput({ isLoading, onEscape
             </div>
 
             <button
-                onClick={hasCommand ? () => void handleSubmit() : undefined}
+                onClick={hasCommand ? handleButtonClick : undefined}
                 disabled={isLoading}
                 style={{ color: hasCommand ? 'rgba(59,130,246,0.95)' : 'rgba(255,255,255,0.2)', transition: 'color 0.2s ease', flexShrink: 0 }}
             >

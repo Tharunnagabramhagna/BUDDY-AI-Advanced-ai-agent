@@ -1,5 +1,5 @@
 import { Sparkles, ChevronDown } from 'lucide-react';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import CommandInput from './CommandInput';
 import { addMessage, addMessages, getHistory, setHistory } from '../store/chatStore';
 
@@ -13,6 +13,7 @@ const APP_KEYWORDS = [
 ];
 
 const COMMAND_TRIGGERS = ['open ', 'launch ', 'start ', 'run ', 'search google for ', 'search youtube for '];
+const SIDEBAR_SUGGESTIONS = ['Ask me anything', 'Open Chrome', 'Search YouTube', 'Search Google'];
 
 const glassCard = {
     background: 'rgba(18,18,22,0.65)',
@@ -22,7 +23,7 @@ const glassCard = {
     boxShadow: '0 32px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.07)'
 };
 
-const BuddyLogo = memo(({ size = 'sm', pulse = true }) => {
+const BuddyLogo = React.memo(({ size = 'sm', pulse = true }) => {
     const dim = size === 'lg' ? 64 : size === 'md' ? 40 : 28;
     const iconSize = size === 'lg' ? 22 : size === 'md' ? 14 : 10;
     const ringDim = size === 'lg' ? 80 : size === 'md' ? 52 : 36;
@@ -51,7 +52,7 @@ const BuddyLogo = memo(({ size = 'sm', pulse = true }) => {
     );
 });
 
-const Sidebar = memo(({ visible }) => (
+const Sidebar = React.memo(({ visible }) => (
     <div
         className="fixed right-5 top-1/2 -translate-y-1/2 w-[180px] transition-all duration-500 ease-out"
         style={{ opacity: visible ? 1 : 0, transform: `translateY(-50%) translateX(${visible ? 0 : 24}px)`, pointerEvents: visible ? 'auto' : 'none' }}
@@ -75,7 +76,7 @@ const Sidebar = memo(({ visible }) => (
             <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 11, lineHeight: 1.6, marginBottom: 12 }}>Your personal AI assistant - always one shortcut away.</p>
             <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.08)', margin: '10px 0' }} />
             <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 10, letterSpacing: '0.06em', marginBottom: 8 }}>TRY SAYING</p>
-            {['Ask me anything', 'Open Chrome', 'Search YouTube', 'Search Google'].map((text) => (
+            {SIDEBAR_SUGGESTIONS.map((text) => (
                 <div key={text} className="flex items-center gap-1.5 mb-1.5">
                     <span style={{ color: 'rgba(96,165,250,0.7)', fontSize: 10 }}>{'>'}</span>
                     <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 11 }}>{text}</span>
@@ -87,7 +88,7 @@ const Sidebar = memo(({ visible }) => (
     </div>
 ));
 
-const WelcomeSplash = memo(({ onDone }) => {
+const WelcomeSplash = React.memo(({ onDone }) => {
     const [phase, setPhase] = useState('enter');
 
     useEffect(() => {
@@ -134,7 +135,7 @@ const WelcomeSplash = memo(({ onDone }) => {
     );
 });
 
-const ChatHeader = memo(() => (
+const ChatHeader = React.memo(() => (
     <div
         className="relative w-full"
         style={{
@@ -144,36 +145,6 @@ const ChatHeader = memo(() => (
             borderBottom: '0.5px solid rgba(255,255,255,0.06)'
         }}
     >
-        <div className="absolute top-2 right-3 z-50 flex items-center gap-2">
-            <button
-                onClick={() => window.buddyWindow?.minimize?.()}
-                className="flex items-center justify-center rounded px-2 py-1 transition-all hover:bg-slate-800/50 hover:text-white"
-                style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, lineHeight: 1 }}
-                aria-label="Minimize window"
-                title="Minimize"
-            >
-                —
-            </button>
-            <button
-                onClick={() => window.buddyWindow?.toggleMaximize?.()}
-                className="flex items-center justify-center rounded px-2 py-1 transition-all hover:bg-slate-800/50 hover:text-white"
-                style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1 }}
-                aria-label="Maximize or restore window"
-                title="Maximize or restore"
-            >
-                ▢
-            </button>
-            <button
-                onClick={() => window.buddyWindow?.close?.()}
-                className="flex items-center justify-center rounded px-2 py-1 transition-all hover:bg-slate-800/50 hover:text-red-400"
-                style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1 }}
-                aria-label="Hide Buddy"
-                title="Hide Buddy"
-            >
-                X
-            </button>
-        </div>
-
         <div className="flex items-center px-5 py-3 pr-16">
             <div className="flex items-center gap-2" style={{ color: 'rgba(96,165,250,0.9)', fontWeight: 500, letterSpacing: '0.08em', fontSize: 12 }}>
                 <Sparkles size={15} />
@@ -183,80 +154,85 @@ const ChatHeader = memo(() => (
     </div>
 ));
 
-const ChatPanel = memo(({ chatOpen, isLoading, messages, onClose, chatEndRef }) => (
-    <div
-        style={{
-            ...glassCard,
-            borderRadius: chatOpen ? 0 : '0 0 20px 20px',
-            overflow: 'hidden',
-            maxHeight: chatOpen ? 380 : 0,
-            opacity: chatOpen ? 1 : 0,
-            transition: 'max-height 0.4s cubic-bezier(0.32,0.72,0,1), opacity 0.3s ease, border-radius 0.3s ease',
-            borderBottom: chatOpen ? '0.5px solid rgba(255,255,255,0.06)' : 'none'
-        }}
-    >
-        <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
-            <div className="flex items-center gap-2">
-                <Sparkles size={13} style={{ color: 'rgba(96,165,250,0.8)' }} />
-                <span style={{ color: 'rgba(96,165,250,0.8)', fontSize: 12, fontWeight: 500, letterSpacing: '0.04em' }}>BUDDY AI</span>
-            </div>
-            <button
-                onClick={onClose}
-                className="flex items-center justify-center rounded-full transition-all hover:bg-white/10"
-                style={{ width: 22, height: 22, background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)' }}
+const ChatPanel = React.memo(({ chatOpen, isLoading, messages, onClose, chatEndRef }) => {
+    const messageList = useMemo(() => messages.map((msg, index) => (
+        <div key={index} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {msg.role === 'buddy' && (
+                <div
+                    className="flex items-center justify-center rounded-full shrink-0 mt-0.5"
+                    style={{ width: 20, height: 20, background: 'rgba(59,130,246,0.12)', border: '0.5px solid rgba(59,130,246,0.3)' }}
+                >
+                    <Sparkles size={9} style={{ color: 'rgba(96,165,250,0.9)' }} />
+                </div>
+            )}
+            <div
+                style={{
+                    maxWidth: '78%',
+                    padding: '8px 12px',
+                    borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    background: msg.role === 'user' ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: `0.5px solid ${msg.role === 'user' ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.07)'}`,
+                    color: msg.role === 'user' ? 'rgba(186,219,255,0.95)' : 'rgba(255,255,255,0.65)'
+                }}
             >
-                <ChevronDown size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />
-            </button>
+                {msg.text}
+            </div>
         </div>
+    )), [messages]);
 
-        <div className="overflow-y-auto px-5 pb-4 space-y-3" style={{ maxHeight: 300 }}>
-            {messages.map((msg, index) => (
-                <div key={index} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    {msg.role === 'buddy' && (
+    return (
+        <div
+            style={{
+                ...glassCard,
+                borderRadius: chatOpen ? 0 : '0 0 20px 20px',
+                overflow: 'hidden',
+                maxHeight: chatOpen ? 380 : 0,
+                opacity: chatOpen ? 1 : 0,
+                transition: 'max-height 0.4s cubic-bezier(0.32,0.72,0,1), opacity 0.3s ease, border-radius 0.3s ease',
+                borderBottom: chatOpen ? '0.5px solid rgba(255,255,255,0.06)' : 'none'
+            }}
+        >
+            <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+                <div className="flex items-center gap-2">
+                    <Sparkles size={13} style={{ color: 'rgba(96,165,250,0.8)' }} />
+                    <span style={{ color: 'rgba(96,165,250,0.8)', fontSize: 12, fontWeight: 500, letterSpacing: '0.04em' }}>BUDDY AI</span>
+                </div>
+                <button
+                    onClick={onClose}
+                    className="flex items-center justify-center rounded-full transition-all hover:bg-white/10"
+                    style={{ width: 22, height: 22, background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)' }}
+                >
+                    <ChevronDown size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />
+                </button>
+            </div>
+
+            <div className="overflow-y-auto px-5 pb-4 space-y-3" style={{ maxHeight: 300 }}>
+                {messageList}
+                {isLoading && (
+                    <div className="flex gap-2 justify-start">
                         <div
                             className="flex items-center justify-center rounded-full shrink-0 mt-0.5"
                             style={{ width: 20, height: 20, background: 'rgba(59,130,246,0.12)', border: '0.5px solid rgba(59,130,246,0.3)' }}
                         >
-                            <Sparkles size={9} style={{ color: 'rgba(96,165,250,0.9)' }} />
+                            <div className="w-2.5 h-2.5 rounded-full animate-spin border-2 border-transparent" style={{ borderTopColor: 'rgba(59,130,246,0.9)', borderRightColor: 'rgba(59,130,246,0.9)' }} />
                         </div>
-                    )}
-                    <div
-                        style={{
-                            maxWidth: '78%',
-                            padding: '8px 12px',
-                            borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                            fontSize: 13,
-                            lineHeight: 1.6,
-                            whiteSpace: 'pre-wrap',
-                            background: msg.role === 'user' ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)',
-                            border: `0.5px solid ${msg.role === 'user' ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.07)'}`,
-                            color: msg.role === 'user' ? 'rgba(186,219,255,0.95)' : 'rgba(255,255,255,0.65)'
-                        }}
-                    >
-                        {msg.text}
+                        <div style={{ padding: '8px 12px', borderRadius: '14px 14px 14px 4px', fontSize: 13, background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>
+                            thinking...
+                        </div>
                     </div>
-                </div>
-            ))}
-            {isLoading && (
-                <div className="flex gap-2 justify-start">
-                    <div
-                        className="flex items-center justify-center rounded-full shrink-0 mt-0.5"
-                        style={{ width: 20, height: 20, background: 'rgba(59,130,246,0.12)', border: '0.5px solid rgba(59,130,246,0.3)' }}
-                    >
-                        <div className="w-2.5 h-2.5 rounded-full animate-spin border-2 border-transparent" style={{ borderTopColor: 'rgba(59,130,246,0.9)', borderRightColor: 'rgba(59,130,246,0.9)' }} />
-                    </div>
-                    <div style={{ padding: '8px 12px', borderRadius: '14px 14px 14px 4px', fontSize: 13, background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>
-                        thinking...
-                    </div>
-                </div>
-            )}
-            <div ref={chatEndRef} />
+                )}
+                <div ref={chatEndRef} />
+            </div>
         </div>
-    </div>
-));
+    );
+});
 
-const InputBar = memo(({ chatOpen, isLoading, onEscape, onSubmit, inputRef }) => (
+const InputBar = React.memo(({ chatOpen, isLoading, onEscape, onSubmit, inputRef }) => (
     <div
+        className="buddy-input-bar"
         style={{
             ...glassCard,
             borderRadius: chatOpen ? '0 0 20px 20px' : 20,
@@ -264,7 +240,8 @@ const InputBar = memo(({ chatOpen, isLoading, onEscape, onSubmit, inputRef }) =>
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            transition: 'border-radius 0.3s ease'
+            transition: 'border-radius 0.3s ease',
+            borderTop: '0.5px solid rgba(59,130,246,0.25)'
         }}
     >
         <div className="flex items-center gap-2 shrink-0">
@@ -278,7 +255,7 @@ const InputBar = memo(({ chatOpen, isLoading, onEscape, onSubmit, inputRef }) =>
     </div>
 ));
 
-const Spotlight = memo(() => {
+const Spotlight = React.memo(() => {
     const [messages, setMessages] = useState(() => getHistory());
     const [isLoading, setIsLoading] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
@@ -415,18 +392,55 @@ const Spotlight = memo(() => {
 
     return (
         <>
+            <style>{`
+                @keyframes borderPulse {
+                    0%, 100% { 
+                        box-shadow: 0 32px 80px rgba(0,0,0,0.65), 
+                                    inset 0 1px 0 rgba(255,255,255,0.06), 
+                                    0 0 0 0.5px rgba(59,130,246,0.2), 
+                                    0 0 20px rgba(59,130,246,0.06);
+                    }
+                    50% { 
+                        box-shadow: 0 32px 80px rgba(0,0,0,0.65), 
+                                    inset 0 1px 0 rgba(255,255,255,0.06), 
+                                    0 0 0 0.5px rgba(99,102,241,0.5), 
+                                    0 0 30px rgba(99,102,241,0.12);
+                    }
+                }
+                .buddy-input-bar {
+                    animation: borderPulse 3s ease-in-out infinite;
+                }
+                @keyframes glowPulse {
+                    0%, 100% { opacity: 0.4; }
+                    50% { opacity: 0.7; }
+                }
+                .buddy-glow {
+                    animation: glowPulse 3s ease-in-out infinite;
+                }
+            `}</style>
             {showSplash && <WelcomeSplash onDone={handleSplashDone} />}
             <Sidebar visible={sidebarVisible && mainVisible} />
 
             <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4" style={spotlightStyle}>
-                <div className="w-full flex flex-col" style={{ maxWidth: 580 }}>
-                    <ChatHeader />
-                    <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} messages={messages} onClose={handleChatClose} />
-                    <InputBar chatOpen={chatOpen} inputRef={inputRef} isLoading={isLoading} onEscape={handleEscape} onSubmit={handleSubmit} />
+                <div style={{ position: 'relative', width: '100%', maxWidth: 580, display: 'flex', flexDirection: 'column' }}>
+                    <div className="buddy-glow" style={{
+                        position: 'absolute',
+                        inset: -2,
+                        borderRadius: 24,
+                        pointerEvents: 'none',
+                        zIndex: -1,
+                        boxShadow: '0 0 80px rgba(59,130,246,0.12), 0 0 160px rgba(99,102,241,0.06)',
+                        background: 'transparent'
+                    }} />
+                    <div className="w-full flex flex-col">
+                        <ChatHeader />
+                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} messages={messages} onClose={handleChatClose} />
+                        <InputBar chatOpen={chatOpen} inputRef={inputRef} isLoading={isLoading} onEscape={handleEscape} onSubmit={handleSubmit} />
 
-                    <p className="text-center mt-3" style={{ color: 'rgba(255,255,255,0.15)', fontSize: 11, letterSpacing: '0.02em' }}>
-                        Press <kbd style={{ fontFamily: 'monospace' }}>Esc</kbd> to close chat | <kbd style={{ fontFamily: 'monospace' }}>Ctrl+Alt+B</kbd> to toggle
-                    </p>
+                        <p className="text-center mt-3" style={{ color: 'rgba(255,255,255,0.15)', fontSize: 11, letterSpacing: '0.02em' }}>
+                            Press <kbd style={{ fontFamily: 'monospace' }}>Esc</kbd> to close chat | <kbd style={{ fontFamily: 'monospace' }}>Ctrl+Alt+B</kbd> to toggle
+                        </p>
+                    </div>
                 </div>
             </div>
         </>

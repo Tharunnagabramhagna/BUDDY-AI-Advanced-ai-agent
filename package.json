@@ -6,6 +6,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
+    "start": "npm run electron",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
