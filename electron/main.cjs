@@ -25,6 +25,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
     console.log("Another Buddy instance is already running. Quitting duplicate instance.")
     app.quit()
+    process.exit(0)
 }
 
 process.on("uncaughtException", (error) => {
@@ -368,4 +369,7 @@ app.on("browser-window-created", () => {
 
 app.on("will-quit", () => {
     globalShortcut.unregisterAll()
+    if (tray) {
+        tray.destroy()
+    }
 })

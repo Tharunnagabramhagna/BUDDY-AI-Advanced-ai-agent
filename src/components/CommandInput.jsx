@@ -39,6 +39,9 @@ const CommandInput = memo(forwardRef(function CommandInput({ isLoading, onEscape
         },
         focus() {
             innerInputRef.current?.focus();
+        },
+        setCommand(cmd) {
+            setCommand(cmd);
         }
     }), []);
 
@@ -61,20 +64,27 @@ const CommandInput = memo(forwardRef(function CommandInput({ isLoading, onEscape
                         outline: 'none',
                         caretColor: 'rgba(59,130,246,1)',
                         color: 'rgba(255,255,255,0.85)',
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: 400,
-                        letterSpacing: '-0.01em'
+                        letterSpacing: '-0.015em'
                     }}
                 />
             </div>
 
-            <button
-                onClick={hasCommand ? handleButtonClick : undefined}
-                disabled={isLoading}
-                style={{ color: hasCommand ? 'rgba(59,130,246,0.95)' : 'rgba(255,255,255,0.2)', transition: 'color 0.2s ease', flexShrink: 0 }}
-            >
-                {hasCommand ? <Send size={16} strokeWidth={1.5} /> : <Mic size={16} strokeWidth={1.5} />}
-            </button>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+                <div style={{
+                    position: 'absolute', inset: -4, borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%)',
+                    opacity: command.trim() ? 1 : 0, transition: 'opacity 0.3s ease'
+                }} />
+                <button
+                    onClick={hasCommand ? handleButtonClick : undefined}
+                    disabled={isLoading}
+                    style={{ color: hasCommand ? 'rgba(59,130,246,0.95)' : 'rgba(255,255,255,0.2)', transition: 'color 0.2s ease', position: 'relative', zIndex: 1 }}
+                >
+                    {hasCommand ? <Send size={16} strokeWidth={1.5} /> : <Mic size={16} strokeWidth={1.5} />}
+                </button>
+            </div>
         </>
     );
 }));
