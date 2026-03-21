@@ -1,7 +1,7 @@
 import { Mic, Send } from 'lucide-react';
 import React, { forwardRef, memo, useCallback, useImperativeHandle, useRef, useState } from 'react';
 
-const CommandInput = memo(forwardRef(function CommandInput({ isLoading, onEscape, onSubmit }, ref) {
+const CommandInput = memo(forwardRef(function CommandInput({ isLoading, isListening, sttOnline, onEscape, onSubmit }, ref) {
     const [command, setCommand] = useState('');
     const innerInputRef = useRef(null);
 
@@ -71,20 +71,58 @@ const CommandInput = memo(forwardRef(function CommandInput({ isLoading, onEscape
                 />
             </div>
 
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-                <div style={{
-                    position: 'absolute', inset: -4, borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%)',
-                    opacity: command.trim() ? 1 : 0, transition: 'opacity 0.3s ease'
-                }} />
-                <button
-                    onClick={hasCommand ? handleButtonClick : undefined}
-                    disabled={isLoading}
-                    style={{ color: hasCommand ? 'rgba(59,130,246,0.95)' : 'rgba(255,255,255,0.2)', transition: 'color 0.2s ease', position: 'relative', zIndex: 1 }}
-                >
-                    {hasCommand ? <Send size={16} strokeWidth={1.5} /> : <Mic size={16} strokeWidth={1.5} />}
-                </button>
-            </div>
+            {/* STT mic status indicator — always-on listening signal */}
+            {hasCommand ? (
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <div style={{
+                        position: 'absolute', inset: -4, borderRadius: '50%',
+                        background: 'radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%)',
+                        opacity: 1, transition: 'opacity 0.3s ease'
+                    }} />
+                    <button
+                        onClick={handleButtonClick}
+                        disabled={isLoading}
+                        style={{ color: 'rgba(59,130,246,0.95)', transition: 'color 0.2s ease', position: 'relative', zIndex: 1 }}
+                    >
+                        <Send size={16} strokeWidth={1.5} />
+                    </button>
+                </div>
+            ) : (
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                    {/* Outer glow when actively processing speech */}
+                    {isListening && (
+                        <div style={{
+                            position: 'absolute', inset: -6, borderRadius: '50%',
+                            background: 'radial-gradient(circle, rgba(239,68,68,0.25) 0%, transparent 70%)',
+                            animation: 'pulse 1s ease-in-out infinite'
+                        }} />
+                    )}
+                    <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: isListening
+                            ? 'rgba(239,68,68,0.15)'
+                            : sttOnline
+                                ? 'rgba(52,211,153,0.08)'
+                                : 'transparent',
+                        border: isListening
+                            ? '0.5px solid rgba(239,68,68,0.4)'
+                            : sttOnline
+                                ? '0.5px solid rgba(52,211,153,0.3)'
+                                : '0.5px solid rgba(255,255,255,0.1)',
+                        transition: 'all 0.3s ease'
+                    }}>
+                        <Mic size={14} strokeWidth={1.5} style={{
+                            color: isListening
+                                ? 'rgba(239,68,68,0.9)'
+                                : sttOnline
+                                    ? 'rgba(52,211,153,0.8)'
+                                    : 'rgba(255,255,255,0.2)',
+                            transition: 'color 0.3s ease'
+                        }} className={isListening ? 'animate-pulse' : ''} />
+                    </div>
+                </div>
+            )}
         </>
     );
 }));

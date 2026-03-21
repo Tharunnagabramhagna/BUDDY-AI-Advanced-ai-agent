@@ -7,6 +7,7 @@ app.disableHardwareAcceleration()
 const fs = require("fs")
 const http = require("http")
 const { exec } = require("child_process")
+const { spawn } = require("child_process")
 const { GoogleGenerativeAI } = require("@google/generative-ai")
 
 const API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
@@ -16,6 +17,7 @@ console.log("Gemini key loaded:", API_KEY ? API_KEY.substring(0, 8) + "..." : "M
 
 let mainWindow
 let tray
+let sttProcess = null
 let isCreatingWindow = false
 const DEV_SERVER_URL = "http://localhost:5173"
 const DIST_INDEX_PATH = path.join(__dirname, "..", "dist", "index.html")
@@ -148,11 +150,37 @@ async function createWindow() {
             mainWindow = null
         })
 
+        // Notify STT when window shows or hides
+        mainWindow.on("show", async () => {
+            try { await fetch("http://localhost:5050/app-open") } catch {}
+        })
+        mainWindow.on("hide", async () => {
+            try { await fetch("http://localhost:5050/app-close") } catch {}
+        })
+
         await loadRenderer()
         return mainWindow
     } finally {
         isCreatingWindow = false
     }
+}
+
+function startSTTServer() {
+    const pythonScript = path.join(__dirname, "../python/buddy_stt.py")
+    sttProcess = spawn("python", [pythonScript], {
+        detached: false,
+        stdio: "pipe"
+    })
+    sttProcess.stdout.on("data", (data) => {
+        console.log("[STT]", data.toString().trim())
+    })
+    sttProcess.stderr.on("data", (data) => {
+        console.error("[STT Error]", data.toString().trim())
+    })
+    sttProcess.on("close", (code) => {
+        console.log("[STT] Process exited:", code)
+    })
+    console.log("[Buddy] STT server started")
 }
 
 function createTray() {
@@ -285,6 +313,11 @@ ipcMain.on("buddy-command", (event, command) => {
     handleCommand(command);
 });
 
+ipcMain.on("close-app", () => {
+    if (mainWindow) mainWindow.hide();
+    console.log("[Buddy] Window hidden via close-app command");
+});
+
 ipcMain.handle("window-minimize", () => {
     if (!mainWindow) return false;
 
@@ -337,9 +370,25 @@ ipcMain.handle("ask-buddy", async (event, prompt, history = []) => {
 
 app.whenReady().then(async () => {
     console.log("Electron app is ready");
+    startSTTServer()
     createTray()
     await createWindow()
     registerShortcut()
+
+    // Poll for wake word when app is hidden
+    setInterval(async () => {
+        if (mainWindow && !mainWindow.isVisible()) {
+            try {
+                const res = await fetch("http://localhost:5050/result")
+                const data = await res.json()
+                if (data.wake === true) {
+                    mainWindow.show()
+                    mainWindow.focus()
+                    console.log("[Buddy] Wake word detected — showing window")
+                }
+            } catch {}
+        }
+    }, 600)
 }).catch((error) => {
     console.error("Buddy failed during app startup:", error)
 })
@@ -369,7 +418,33 @@ app.on("browser-window-created", () => {
 
 app.on("will-quit", () => {
     globalShortcut.unregisterAll()
+    if (sttProcess) {
+        sttProcess.kill()
+        sttProcess = null
+    }
     if (tray) {
         tray.destroy()
     }
+})
+
+ipcMain.handle("get-stt-result", async () => {
+    try {
+        const response = await fetch("http://localhost:5050/result")
+        return await response.json()
+    } catch { return { status: "error", text: "", wake: false } }
+})
+
+ipcMain.handle("get-stt-status", async () => {
+    try {
+        const response = await fetch("http://localhost:5050/status")
+        return await response.json()
+    } catch { return { status: "offline" } }
+})
+
+ipcMain.handle("stt-app-open", async () => {
+    try { await fetch("http://localhost:5050/app-open") } catch {}
+})
+
+ipcMain.handle("stt-app-close", async () => {
+    try { await fetch("http://localhost:5050/app-close") } catch {}
 })

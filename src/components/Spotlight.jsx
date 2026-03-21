@@ -29,7 +29,7 @@ const LOCAL_RESPONSES = {
         ]
     },
     farewells: {
-        triggers: ['bye', 'goodbye', 'see you', 'see ya', 'later', 'good night', 'goodnight', 'cya', 'take care', 'farewell'],
+        triggers: ['see you', 'see ya', 'later', 'good night', 'goodnight', 'cya', 'take care', 'farewell'],
         responses: [
             "Goodbye! Press Ctrl+Alt+B whenever you need me 👋",
             "See you later! I'll be right here when you need me.",
@@ -811,7 +811,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
     );
 });
 
-const InputBar = React.memo(({ chatOpen, isLoading, onEscape, onSubmit, inputRef }) => (
+const InputBar = React.memo(({ chatOpen, isLoading, isListening, sttOnline, onEscape, onSubmit, inputRef }) => (
     <div
         className="buddy-input-bar"
         style={{
@@ -843,7 +843,7 @@ const InputBar = React.memo(({ chatOpen, isLoading, onEscape, onSubmit, inputRef
 
         <div style={{ width: '0.5px', height: 18, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
 
-        <CommandInput ref={inputRef} isLoading={isLoading} onEscape={onEscape} onSubmit={onSubmit} />
+        <CommandInput ref={inputRef} isLoading={isLoading} isListening={isListening} sttOnline={sttOnline} onEscape={onEscape} onSubmit={onSubmit} />
     </div>
 ));
 
@@ -855,11 +855,14 @@ const Spotlight = React.memo(() => {
     const [sidebarVisible, setSidebarVisible] = useState(true);
     const [showSplash, setShowSplash] = useState(true);
     const [mainVisible, setMainVisible] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [sttOnline, setSttOnline] = useState(false);
     const inputRef = useRef(null);
     const lastUsedResponsesRef = useRef({});
     const chatEndRef = useRef(null);
     const messagesRef = useRef(messages);
     const loadingRef = useRef(isLoading);
+    const pollRef = useRef(null);
 
     useEffect(() => {
         messagesRef.current = messages;
@@ -917,10 +920,9 @@ const Spotlight = React.memo(() => {
         inputRef.current?.clear();
     }, [chatOpen, handleChatClose]);
 
-    const handleSubmit = useCallback(async (rawText) => {
-        const text = rawText.trim();
-
-        if (!text || loadingRef.current) {
+    const handleSubmit = useCallback(async (textOverride = null) => {
+        const finalText = typeof textOverride === 'string' ? textOverride.trim() : '';
+        if (!finalText || loadingRef.current) {
             return false;
         }
 
@@ -928,13 +930,13 @@ const Spotlight = React.memo(() => {
         setSidebarVisible(false);
         inputRef.current?.clear();
 
-        if (isAppCommand(text)) {
-            window.electronAPI?.sendBuddyCommand(text);
+        if (isAppCommand(finalText)) {
+            window.electronAPI?.sendBuddyCommand(finalText);
             setMessages((prev) => {
                 const nextMessages = [
                     ...prev,
-                    { role: 'user', text, timestamp: Date.now() },
-                    { role: 'buddy', text: `Done! Running: "${text}"`, timestamp: Date.now() }
+                    { role: 'user', text: finalText, timestamp: Date.now() },
+                    { role: 'buddy', text: `Done! Running: "${finalText}"`, timestamp: Date.now() }
                 ];
 
                 addMessages(nextMessages.slice(prev.length));
@@ -944,12 +946,12 @@ const Spotlight = React.memo(() => {
         }
 
         // Check for math expression first
-        const mathResult = evaluateMath(text);
+        const mathResult = evaluateMath(finalText);
         if (mathResult) {
             setSidebarVisible(false);
             setChatOpen(true);
             setIsTyping(true);
-            setMessages(prev => [...prev, { role: 'user', text, timestamp: Date.now() }]);
+            setMessages(prev => [...prev, { role: 'user', text: finalText, timestamp: Date.now() }]);
             setTimeout(() => {
                 setIsTyping(false);
                 setMessages(prev => [...prev, { role: 'buddy', text: mathResult, timestamp: Date.now() }]);
@@ -957,11 +959,35 @@ const Spotlight = React.memo(() => {
             return true;
         }
 
-        const localResponse = getLocalResponse(text, lastUsedResponsesRef);
+        // Check for close/exit commands
+        const closeKeywords = [
+            'close the app', 'close app', 'close buddy', 'exit', 'exit app',
+            'quit', 'quit app', 'close the tab', 'close tab', 'shut down',
+            'goodbye buddy', 'bye buddy', 'see you buddy', 'close now'
+        ];
+        const lowerFinalText = finalText.toLowerCase().trim();
+        const isCloseCommand = closeKeywords.some(k => lowerFinalText === k || lowerFinalText.includes(k));
+
+        if (isCloseCommand) {
+            setMessages(prev => [...prev,
+                { role: 'user', text: finalText, timestamp: Date.now() },
+                { role: 'buddy', text: "Goodbye! See you next time 👋\nPress Ctrl+Alt+B to bring me back anytime.", timestamp: Date.now() }
+            ]);
+            setChatOpen(true);
+            setSidebarVisible(false);
+            setTimeout(() => {
+                if (window.electronAPI?.closeApp) {
+                    window.electronAPI.closeApp();
+                }
+            }, 1500);
+            return true;
+        }
+
+        const localResponse = getLocalResponse(finalText, lastUsedResponsesRef);
         if (localResponse) {
             setSidebarVisible(false);
             setChatOpen(true);
-            setMessages(prev => [...prev, { role: 'user', text, timestamp: Date.now() }]);
+            setMessages(prev => [...prev, { role: 'user', text: finalText, timestamp: Date.now() }]);
             setIsTyping(true);
             setTimeout(() => {
                 setIsTyping(false);
@@ -971,7 +997,7 @@ const Spotlight = React.memo(() => {
         }
 
         const currentMessages = messagesRef.current;
-        const userMessage = { role: 'user', text, timestamp: Date.now() };
+        const userMessage = { role: 'user', text: finalText, timestamp: Date.now() };
         const updatedMessages = [...currentMessages, userMessage];
 
         setMessages(updatedMessages);
@@ -987,7 +1013,7 @@ const Spotlight = React.memo(() => {
                 }))
                 .filter((message) => message.parts[0].text);
 
-            const response = await window.buddyAPI.askBuddy(text, history);
+            const response = await window.buddyAPI.askBuddy(finalText, history);
             const buddyMessage = { role: 'buddy', text: response, timestamp: Date.now() };
             setMessages((prev) => [...prev, buddyMessage]);
             addMessage(buddyMessage);
@@ -1001,6 +1027,64 @@ const Spotlight = React.memo(() => {
 
         return true;
     }, [isAppCommand]);
+
+    // STT polling — always-on background listener
+    useEffect(() => {
+        // Notify STT that app is open
+        window.buddySTT?.notifyOpen?.()
+
+        // Check STT online status
+        const checkStatus = async () => {
+            try {
+                const s = await window.buddySTT.getStatus()
+                setSttOnline(s.status === 'online')
+            } catch { setSttOnline(false) }
+        }
+        checkStatus()
+
+        // Poll every 600ms
+        pollRef.current = setInterval(async () => {
+            try {
+                const result = await window.buddySTT.getResult()
+
+                // Wake word detected — open app (already open) and show ready state
+                if (result.wake && result.status === 'wake') {
+                    setIsListening(true)
+                    setChatOpen(true)
+                    setSidebarVisible(false)
+                    setMessages(prev => {
+                        // Only add wake message if last message wasn't already wake
+                        const last = prev[prev.length - 1]
+                        if (last?.text === "I'm listening... 🎤") return prev
+                        return [...prev, {
+                            role: 'buddy',
+                            text: "I'm listening... 🎤",
+                            timestamp: Date.now()
+                        }]
+                    })
+                    return
+                }
+
+                if (result.status === 'success' && result.text && result.text.trim()) {
+                    setIsListening(false)
+                    const spokenText = result.text.trim()
+                    if (inputRef.current) {
+                        inputRef.current.setCommand(spokenText)
+                    }
+                    setTimeout(() => handleSubmit(spokenText), 100)
+                } else if (result.status === 'processing') {
+                    setIsListening(true)
+                } else if (result.status === 'idle') {
+                    setIsListening(false)
+                }
+            } catch { /* STT not available */ }
+        }, 600)
+
+        return () => {
+            window.buddySTT?.notifyClose?.()
+            if (pollRef.current) clearInterval(pollRef.current)
+        }
+    }, [handleSubmit])
 
     const spotlightStyle = useMemo(() => ({
         background: 'rgba(0,0,0,0.45)',
@@ -1096,6 +1180,10 @@ const Spotlight = React.memo(() => {
                 .buddy-glow {
                     animation: glowPulse 3s ease-in-out infinite;
                 }
+                @keyframes pulse {
+                    0%, 100% { opacity: 0.6; transform: scale(1); }
+                    50% { opacity: 1; transform: scale(1.15); }
+                }
             `}</style>
             {showSplash && <WelcomeSplash onDone={handleSplashDone} />}
             <Sidebar visible={sidebarVisible && mainVisible} />
@@ -1151,7 +1239,7 @@ const Spotlight = React.memo(() => {
                                 </div>
                             </div>
                         )}
-                        <InputBar chatOpen={chatOpen} inputRef={inputRef} isLoading={isLoading} onEscape={handleEscape} onSubmit={handleSubmit} />
+                        <InputBar chatOpen={chatOpen} inputRef={inputRef} isLoading={isLoading} isListening={isListening} sttOnline={sttOnline} onEscape={handleEscape} onSubmit={handleSubmit} />
 
                         <p className="text-center mt-3" style={{ color: 'rgba(255,255,255,0.15)', fontSize: 12, letterSpacing: '0.02em' }}>
                             Press <kbd style={{ fontFamily: 'monospace' }}>Esc</kbd> to close chat | <kbd style={{ fontFamily: 'monospace' }}>Ctrl+Alt+B</kbd> to toggle
