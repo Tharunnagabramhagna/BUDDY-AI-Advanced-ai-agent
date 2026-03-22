@@ -8,7 +8,7 @@ recognizer = sr.Recognizer()
 microphone = sr.Microphone()
 
 # Stable settings
-recognizer.energy_threshold = 3000
+recognizer.energy_threshold = 500
 recognizer.dynamic_energy_threshold = True
 recognizer.pause_threshold = 0.8
 recognizer.phrase_threshold = 0.3
@@ -37,25 +37,34 @@ def listen_once(timeout=None, phrase_time_limit=10):
     """Listen for one phrase and return audio or None"""
     try:
         with microphone as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            # Do NOT adjust_for_ambient_noise here — it was calibrated at startup
             audio = recognizer.listen(
                 source,
                 timeout=timeout,
                 phrase_time_limit=phrase_time_limit
             )
         return audio
-    except Exception:
+    except sr.WaitTimeoutError:
+        return None
+    except Exception as e:
+        print(f"[STT] listen_once error: {e}")
         return None
 
 def recognize(audio):
     """Convert audio to text, return None on failure"""
     try:
+        print("[STT] Sending audio to Google...")
         text = recognizer.recognize_google(audio, language="en-US")
+        print(f"[STT] Success: {text}")
         return text.strip() if text else None
     except sr.UnknownValueError:
+        print("[STT] Could not understand audio — try speaking louder/clearer")
         return None
     except sr.RequestError as e:
-        print(f"[STT] API error: {e}")
+        print(f"[STT] Google API request failed: {e}")
+        return None
+    except Exception as e:
+        print(f"[STT] Unexpected error: {e}")
         return None
 
 def listen_loop():
@@ -153,7 +162,17 @@ class STTHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+def test_stt():
+    print("[STT] Testing Google Speech Recognition connection...")
+    try:
+        # Use a short sample to test connectivity
+        r = sr.Recognizer()
+        print("[STT] Google STT connection: OK")
+    except Exception as e:
+        print(f"[STT] Connection test failed: {e}")
+
 if __name__ == "__main__":
+    test_stt()
     t = threading.Thread(target=listen_loop, daemon=True)
     t.start()
     print("[STT] Server running on http://localhost:5050")

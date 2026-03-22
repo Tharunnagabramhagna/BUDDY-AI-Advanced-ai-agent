@@ -110,8 +110,8 @@ async function createWindow() {
 
     try {
         mainWindow = new BrowserWindow({
-            width: 1200,
-            height: 800,
+            width: 700,
+            height: 580,
             show: false,
             backgroundColor: "#0b1120",
             webPreferences: {
@@ -152,10 +152,10 @@ async function createWindow() {
 
         // Notify STT when window shows or hides
         mainWindow.on("show", async () => {
-            try { await fetch("http://localhost:5050/app-open") } catch {}
+            try { await fetch("http://localhost:5050/app-open") } catch { }
         })
         mainWindow.on("hide", async () => {
-            try { await fetch("http://localhost:5050/app-close") } catch {}
+            try { await fetch("http://localhost:5050/app-close") } catch { }
         })
 
         await loadRenderer()
@@ -167,20 +167,29 @@ async function createWindow() {
 
 function startSTTServer() {
     const pythonScript = path.join(__dirname, "../python/buddy_stt.py")
-    sttProcess = spawn("python", [pythonScript], {
+    console.log("[STT] Starting Python script at:", pythonScript)
+
+    // Try 'python' first, fall back to 'python3'
+    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+
+    sttProcess = spawn(pythonCmd, [pythonScript], {
         detached: false,
-        stdio: "pipe"
+        stdio: "pipe",
+        cwd: path.join(__dirname, "../python")
     })
+
     sttProcess.stdout.on("data", (data) => {
         console.log("[STT]", data.toString().trim())
     })
     sttProcess.stderr.on("data", (data) => {
         console.error("[STT Error]", data.toString().trim())
     })
-    sttProcess.on("close", (code) => {
-        console.log("[STT] Process exited:", code)
+    sttProcess.on("error", (err) => {
+        console.error("[STT] Failed to start process:", err.message)
     })
-    console.log("[Buddy] STT server started")
+    sttProcess.on("close", (code) => {
+        console.log("[STT] Process exited with code:", code)
+    })
 }
 
 function createTray() {
@@ -386,7 +395,7 @@ app.whenReady().then(async () => {
                     mainWindow.focus()
                     console.log("[Buddy] Wake word detected — showing window")
                 }
-            } catch {}
+            } catch { }
         }
     }, 600)
 }).catch((error) => {
@@ -442,9 +451,9 @@ ipcMain.handle("get-stt-status", async () => {
 })
 
 ipcMain.handle("stt-app-open", async () => {
-    try { await fetch("http://localhost:5050/app-open") } catch {}
+    try { await fetch("http://localhost:5050/app-open") } catch { }
 })
 
 ipcMain.handle("stt-app-close", async () => {
-    try { await fetch("http://localhost:5050/app-close") } catch {}
+    try { await fetch("http://localhost:5050/app-close") } catch { }
 })

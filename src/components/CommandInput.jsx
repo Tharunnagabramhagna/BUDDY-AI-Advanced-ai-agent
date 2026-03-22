@@ -1,7 +1,7 @@
 import { Mic, Send } from 'lucide-react';
 import React, { forwardRef, memo, useCallback, useImperativeHandle, useRef, useState } from 'react';
 
-const CommandInput = memo(forwardRef(function CommandInput({ isLoading, isListening, sttOnline, onEscape, onSubmit }, ref) {
+const CommandInput = memo(forwardRef(function CommandInput({ isLoading, isListening, sttOnline, onEscape, onSubmit, onMicClick }, ref) {
     const [command, setCommand] = useState('');
     const innerInputRef = useRef(null);
 
@@ -97,27 +97,35 @@ const CommandInput = memo(forwardRef(function CommandInput({ isLoading, isListen
                             animation: 'pulse 1s ease-in-out infinite'
                         }} />
                     )}
-                    <div style={{
-                        width: 28, height: 28, borderRadius: '50%',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: isListening
-                            ? 'rgba(239,68,68,0.15)'
-                            : sttOnline
-                                ? 'rgba(52,211,153,0.08)'
-                                : 'transparent',
-                        border: isListening
-                            ? '0.5px solid rgba(239,68,68,0.4)'
-                            : sttOnline
-                                ? '0.5px solid rgba(52,211,153,0.3)'
-                                : '0.5px solid rgba(255,255,255,0.1)',
-                        transition: 'all 0.3s ease'
-                    }}>
+                    <div
+                        style={{
+                            width: 28, height: 28, borderRadius: '50%',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: isListening
+                                ? 'rgba(239,68,68,0.15)'
+                                : sttOnline
+                                    ? 'rgba(52,211,153,0.08)'
+                                    : 'rgba(255,255,255,0.04)',
+                            border: isListening
+                                ? '0.5px solid rgba(239,68,68,0.4)'
+                                : sttOnline
+                                    ? '0.5px solid rgba(52,211,153,0.3)'
+                                    : '0.5px solid rgba(255,255,255,0.1)',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease'
+                        }}
+                        onClick={() => {
+                            if (!sttOnline && onMicClick) {
+                                onMicClick();
+                            }
+                        }}
+                    >
                         <Mic size={14} strokeWidth={1.5} style={{
                             color: isListening
                                 ? 'rgba(239,68,68,0.9)'
                                 : sttOnline
                                     ? 'rgba(52,211,153,0.8)'
-                                    : 'rgba(255,255,255,0.2)',
+                                    : 'rgba(255,255,255,0.25)',
                             transition: 'color 0.3s ease'
                         }} className={isListening ? 'animate-pulse' : ''} />
                     </div>

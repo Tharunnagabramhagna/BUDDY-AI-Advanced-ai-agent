@@ -1,4 +1,4 @@
-import { Sparkles, ChevronDown } from 'lucide-react';
+import { Sparkles, ChevronDown, X, Settings } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import CommandInput from './CommandInput';
 import { addMessage, addMessages, getHistory, setHistory } from '../store/chatStore';
@@ -355,10 +355,10 @@ const extractAddress = (text) => {
 
 const injectAddress = (response, address) => {
     if (!address) return response;
-    
+
     // Don't add address if response already contains it
     if (response.toLowerCase().includes(address.toLowerCase())) return response;
-    
+
     // Add address naturally — at the end of the first sentence
     if (response.includes('!')) {
         // Replace first exclamation mark with ", {address}!"
@@ -470,7 +470,7 @@ const safeEval = (expr) => {
 
 const evaluateMath = (text) => {
     const lower = text.toLowerCase().trim();
-    
+
     // Trig functions
     const trigMap = {
         'sin': (x) => Math.sin(x * Math.PI / 180),
@@ -606,46 +606,72 @@ const Sidebar = React.memo(({ visible }) => (
 
 const WelcomeSplash = React.memo(({ onDone }) => {
     const [phase, setPhase] = useState('enter');
-
     useEffect(() => {
-        const t1 = setTimeout(() => setPhase('hold'), 400);
-        const t2 = setTimeout(() => setPhase('dissolve'), 2000);
+        const t1 = setTimeout(() => setPhase('hold'), 300);
+        const t2 = setTimeout(() => setPhase('dissolve'), 2200);
         const t3 = setTimeout(() => onDone(), 2800);
-
-        return () => {
-            clearTimeout(t1);
-            clearTimeout(t2);
-            clearTimeout(t3);
-        };
-    }, [onDone]);
-
+        return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }, []);
     return (
-        <div
-            className="fixed inset-0 z-[100] flex flex-col items-center justify-center transition-all duration-700"
-            style={{
-                background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.15) 0%, rgba(0,0,0,0) 70%), rgba(0,0,0,0.85)',
-                backdropFilter: 'blur(60px)',
-                WebkitBackdropFilter: 'blur(60px)',
-                opacity: phase === 'dissolve' ? 0 : 1,
-                transform: phase === 'dissolve' ? 'scale(0.97)' : 'scale(1)'
-            }}
-        >
-            <div
-                className="flex flex-col items-center gap-5 transition-all duration-500"
-            >
-                <div className="buddy-logo-entrance">
-                    <BuddyLogo size="lg" pulse />
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.96)',
+            transition: 'opacity 0.7s ease, transform 0.7s ease',
+            opacity: phase === 'dissolve' ? 0 : 1,
+            transform: phase === 'dissolve' ? 'scale(0.98)' : 'scale(1)',
+        }}>
+            <div style={{
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', gap: 20,
+                transition: 'opacity 0.5s ease, transform 0.5s ease',
+                opacity: phase === 'enter' ? 0 : 1,
+                transform: phase === 'enter' ? 'translateY(12px)' : 'translateY(0)',
+            }}>
+                {/* Clean logo */}
+                <div style={{ position: 'relative', width: 72, height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{
+                        position: 'absolute', inset: 0, borderRadius: '50%',
+                        border: '1px solid rgba(99,102,241,0.3)',
+                        animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite'
+                    }} />
+                    <div style={{
+                        width: 56, height: 56, borderRadius: '50%',
+                        background: 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.15))',
+                        border: '1px solid rgba(139,92,246,0.4)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 0 30px rgba(99,102,241,0.2)'
+                    }}>
+                        <Sparkles size={22} style={{ color: 'rgba(167,139,250,0.9)' }} />
+                    </div>
                 </div>
-                <div className="text-center" style={{ marginTop: 8 }}>
-                    <h1 className="buddy-title-entrance" style={{ color: 'rgba(255,255,255,0.92)', fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>Buddy</h1>
-                    <p className="buddy-subtitle-entrance" style={{ color: 'rgba(255,255,255,0.36)', fontSize: 13, marginTop: 6, fontWeight: 400 }}>Your personal AI assistant</p>
+
+                {/* Clean text */}
+                <div style={{ textAlign: 'center' }}>
+                    <h1 style={{
+                        color: 'rgba(255,255,255,0.92)', fontSize: 28,
+                        fontWeight: 600, letterSpacing: '-0.03em', margin: 0
+                    }}>Buddy</h1>
+                    <p style={{
+                        color: 'rgba(255,255,255,0.3)', fontSize: 13,
+                        marginTop: 6, fontWeight: 400
+                    }}>Your personal AI assistant</p>
                 </div>
-                <div
-                    className="flex items-center gap-2 px-4 py-2 rounded-full buddy-shortcut-entrance"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)' }}
-                >
-                    <kbd style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontFamily: 'monospace' }}>Ctrl + Alt + B</kbd>
-                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>to open anytime</span>
+
+                {/* Status row */}
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 16,
+                    padding: '8px 20px', borderRadius: 100,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '0.5px solid rgba(255,255,255,0.08)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.8)' }} />
+                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Ready</span>
+                    </div>
+                    <div style={{ width: '0.5px', height: 12, background: 'rgba(255,255,255,0.1)' }} />
+                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, fontFamily: 'monospace' }}>Ctrl+Alt+B</span>
                 </div>
             </div>
         </div>
@@ -671,7 +697,8 @@ const ChatHeader = React.memo(() => (
     </div>
 ));
 
-const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose, chatEndRef }) => {
+const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible }) => {
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const messageList = useMemo(() => messages.map((msg, index) => {
         const isUser = msg.role === 'user';
         return (
@@ -689,7 +716,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                         <style>{`.message-bubble-wrapper:hover .copy-btn { opacity: 1; }`}</style>
                         <div
                             style={{
-                                maxWidth: '78%',
+                                maxWidth: '88%',
                                 padding: '8px 12px',
                                 borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                                 fontSize: 13,
@@ -752,9 +779,10 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
         <div
             style={{
                 ...glassCard,
+                position: 'relative',
                 borderRadius: chatOpen ? 0 : '0 0 20px 20px',
                 overflow: 'hidden',
-                maxHeight: chatOpen ? 380 : 0,
+                maxHeight: chatOpen ? 460 : 0,
                 opacity: chatOpen ? 1 : 0,
                 transition: 'max-height 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease, border-radius 0.35s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
                 transform: chatOpen ? 'translateY(0)' : 'translateY(8px)',
@@ -764,21 +792,84 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                 borderBottom: chatOpen ? '0.5px solid rgba(255,255,255,0.06)' : 'none'
             }}
         >
-            <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
-                <div className="flex items-center gap-2">
-                    <Sparkles size={13} style={{ color: 'rgba(96,165,250,0.8)' }} />
-                    <span style={{ color: 'rgba(96,165,250,0.8)', fontSize: 12, fontWeight: 500, letterSpacing: '0.04em' }}>BUDDY AI</span>
+            <div style={{
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 18px 10px', flexShrink: 0,
+                borderBottom: '0.5px solid rgba(255,255,255,0.05)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                        width: 24, height: 24, borderRadius: '50%',
+                        background: 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.15))',
+                        border: '0.5px solid rgba(139,92,246,0.35)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <Sparkles size={11} style={{ color: 'rgba(167,139,250,0.9)' }} />
+                    </div>
+                    <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500 }}>Buddy AI</span>
+                    <div style={{
+                        padding: '2px 8px', borderRadius: 100, fontSize: 10,
+                        background: 'rgba(52,211,153,0.1)',
+                        border: '0.5px solid rgba(52,211,153,0.25)',
+                        color: 'rgba(52,211,153,0.8)'
+                    }}>gemini-1.5-flash</div>
                 </div>
-                <button
-                    onClick={onClose}
-                    className="flex items-center justify-center rounded-full transition-all hover:bg-white/10"
-                    style={{ width: 22, height: 22, background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)' }}
-                >
-                    <ChevronDown size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {/* Clear chat button */}
+                    <button
+                        onClick={() => { setMessages([]); setChatOpen(false); setSidebarVisible(true); }}
+                        title="Clear chat"
+                        style={{
+                            width: 26, height: 26, borderRadius: 8,
+                            border: '0.5px solid rgba(255,255,255,0.08)',
+                            background: 'rgba(255,255,255,0.04)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', color: 'rgba(255,255,255,0.3)',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.color = 'rgba(239,68,68,0.7)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.2)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                    >
+                        <X size={12} strokeWidth={1.5} />
+                    </button>
+                    {/* Settings button */}
+                    <button
+                        onClick={() => setSettingsOpen(prev => !prev)}
+                        title="Settings"
+                        style={{
+                            width: 26, height: 26, borderRadius: 8,
+                            border: '0.5px solid rgba(255,255,255,0.08)',
+                            background: settingsOpen ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.04)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', color: settingsOpen ? 'rgba(139,92,246,0.9)' : 'rgba(255,255,255,0.3)',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <Settings size={12} strokeWidth={1.5} />
+                    </button>
+                    {/* Collapse button */}
+                    <button
+                        onClick={() => { setChatOpen(false); setSidebarVisible(true); }}
+                        style={{
+                            width: 26, height: 26, borderRadius: 8,
+                            border: '0.5px solid rgba(255,255,255,0.08)',
+                            background: 'rgba(255,255,255,0.04)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', color: 'rgba(255,255,255,0.3)',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
+                    >
+                        <ChevronDown size={12} strokeWidth={1.5} />
+                    </button>
+                </div>
             </div>
 
-            <div className="overflow-y-auto px-5 pb-4 flex flex-col gap-[12px]" style={{ maxHeight: 300 }}>
+            <SettingsPanel visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+            <div className="overflow-y-auto px-5 pb-4 flex flex-col gap-[12px]" style={{ maxHeight: 370 }}>
                 {messageList}
                 {(isLoading || isTyping) && (
                     <div className="message-enter" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -843,7 +934,87 @@ const InputBar = React.memo(({ chatOpen, isLoading, isListening, sttOnline, onEs
 
         <div style={{ width: '0.5px', height: 18, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
 
-        <CommandInput ref={inputRef} isLoading={isLoading} isListening={isListening} sttOnline={sttOnline} onEscape={onEscape} onSubmit={onSubmit} />
+        <CommandInput
+            ref={inputRef}
+            isLoading={isLoading}
+            isListening={isListening}
+            sttOnline={sttOnline}
+            onEscape={onEscape}
+            onSubmit={onSubmit}
+            onMicClick={() => {
+                setMessages(prev => [...prev, {
+                    role: 'buddy',
+                    text: '⚠️ Voice recognition is offline. Make sure the Python STT server is running.',
+                    timestamp: Date.now()
+                }])
+                setChatOpen(true)
+                setSidebarVisible(false)
+            }}
+        />
+    </div>
+));
+
+const SettingsPanel = React.memo(({ visible, onClose }) => (
+    <div style={{
+        position: 'absolute', top: 0, right: 0, bottom: 0,
+        width: '75%', zIndex: 10,
+        transition: 'transform 0.4s cubic-bezier(0.32,0.72,0,1), opacity 0.35s ease',
+        transform: visible ? 'translateX(0)' : 'translateX(100%)',
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+        background: 'linear-gradient(135deg, rgba(14,14,22,0.98) 0%, rgba(18,14,28,0.98) 100%)',
+        backdropFilter: 'blur(40px)',
+        WebkitBackdropFilter: 'blur(40px)',
+        borderLeft: '0.5px solid rgba(255,255,255,0.08)',
+        borderRadius: '0 0 20px 0',
+        display: 'flex', flexDirection: 'column',
+        padding: '16px',
+        boxShadow: '-8px 0 32px rgba(0,0,0,0.3)'
+    }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500 }}>Settings</span>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)' }}>
+                <X size={14} strokeWidth={1.5} />
+            </button>
+        </div>
+
+        {/* Settings items */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* Model info */}
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, letterSpacing: '0.06em', margin: '0 0 4px' }}>AI MODEL</p>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: 0, fontFamily: 'monospace' }}>gemini-1.5-flash</p>
+            </div>
+
+            {/* Shortcut info */}
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, letterSpacing: '0.06em', margin: '0 0 4px' }}>GLOBAL SHORTCUT</p>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: 0, fontFamily: 'monospace' }}>Ctrl + Alt + B</p>
+            </div>
+
+            {/* Voice status */}
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, letterSpacing: '0.06em', margin: '0 0 4px' }}>VOICE INPUT</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 4px rgba(52,211,153,0.8)' }} />
+                    <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: 0 }}>Always listening</p>
+                </div>
+            </div>
+
+            {/* Wake word */}
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, letterSpacing: '0.06em', margin: '0 0 4px' }}>WAKE WORD</p>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: 0, fontFamily: 'monospace' }}>"Hey Buddy"</p>
+            </div>
+
+            {/* Version */}
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, letterSpacing: '0.06em', margin: '0 0 4px' }}>VERSION</p>
+                <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: 0, fontFamily: 'monospace' }}>Buddy v1.0.0</p>
+            </div>
+        </div>
     </div>
 ));
 
@@ -970,8 +1141,8 @@ const Spotlight = React.memo(() => {
 
         if (isCloseCommand) {
             setMessages(prev => [...prev,
-                { role: 'user', text: finalText, timestamp: Date.now() },
-                { role: 'buddy', text: "Goodbye! See you next time 👋\nPress Ctrl+Alt+B to bring me back anytime.", timestamp: Date.now() }
+            { role: 'user', text: finalText, timestamp: Date.now() },
+            { role: 'buddy', text: "Goodbye! See you next time 👋\nPress Ctrl+Alt+B to bring me back anytime.", timestamp: Date.now() }
             ]);
             setChatOpen(true);
             setSidebarVisible(false);
@@ -992,7 +1163,7 @@ const Spotlight = React.memo(() => {
             setTimeout(() => {
                 setIsTyping(false);
                 setMessages(prev => [...prev, { role: 'buddy', text: localResponse, timestamp: Date.now() }]);
-            }, 600 + Math.random() * 400); 
+            }, 600 + Math.random() * 400);
             return true;
         }
 
@@ -1030,6 +1201,7 @@ const Spotlight = React.memo(() => {
 
     // STT polling — always-on background listener
     useEffect(() => {
+        console.log("[Buddy] STT polling useEffect started")
         // Notify STT that app is open
         window.buddySTT?.notifyOpen?.()
 
@@ -1214,14 +1386,14 @@ const Spotlight = React.memo(() => {
                     }} />
                     <div className="w-full flex flex-col">
                         <ChatHeader />
-                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages} onClose={handleChatClose} />
+                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} />
                         {messages.length === 0 && !chatOpen && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                                 justifyContent: 'center', padding: '28px 20px', gap: 8
                             }}>
                                 <p style={{ color: 'rgba(255,255,255,0.12)', fontSize: 13, textAlign: 'center', lineHeight: 1.6 }}>
-                                    Ask me anything, open apps,<br/>or search the web
+                                    Ask me anything, open apps,<br />or search the web
                                 </p>
                                 <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
                                     {['Open Chrome', 'Search YouTube', 'Tell me a joke'].map(s => (
