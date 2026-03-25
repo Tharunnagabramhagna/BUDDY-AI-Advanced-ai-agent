@@ -1,4 +1,4 @@
-import { Sparkles, ChevronDown, X, Settings } from 'lucide-react';
+import { Mic, Send, Sparkles, ChevronDown, X, Settings } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import CommandInput from './CommandInput';
 import { addMessage, addMessages, getHistory, setHistory } from '../store/chatStore';
@@ -9,10 +9,11 @@ const APP_KEYWORDS = [
     'explorer', 'file explorer', 'terminal', 'cmd', 'powershell',
     'word', 'excel', 'powerpoint', 'outlook', 'teams', 'discord',
     'steam', 'vlc', 'zoom', 'slack', 'notion', 'obsidian', 'brave',
-    'firefox', 'opera', 'photoshop', 'premiere', 'illustrator'
+    'firefox', 'opera', 'photoshop', 'premiere', 'illustrator',
+    'zomato', 'swiggy', 'amazon', 'flipkart', 'uber', 'ola', 'bookmyshow'
 ];
 
-const COMMAND_TRIGGERS = ['open ', 'launch ', 'start ', 'run ', 'search google for ', 'search youtube for '];
+const COMMAND_TRIGGERS = ['open ', 'launch ', 'start ', 'run ', 'search ', 'order ', 'buy ', 'book ', 'search google for ', 'search youtube for '];
 const SIDEBAR_SUGGESTIONS = ['Ask me anything', 'Open Chrome', 'Search YouTube', 'Search Google'];
 
 const LOCAL_RESPONSES = {
@@ -339,6 +340,134 @@ const LOCAL_RESPONSES = {
     calculatorHelp: {
         triggers: ["calculator", "can you calculate", "do math", "solve math", "math help", "calculate something"],
         responses: ["Sure! I can do math for you 🧮\n\nTry:\n• Basic: 2 + 2, 100 / 5, 3 * 4\n• Powers: 2 ^ 10\n• Percentage: 20% of 500\n• Trig: sin 30, cos 45, tan 60\n• Roots: sqrt 144\n• Logs: log 100, ln 10\n\nJust type the expression!"]
+    },
+
+    // Common cold & fever
+    coldFever: {
+        triggers: ['i have a cold', 'i have fever', 'i have a fever', 'cold and fever', 'running fever', 'high temperature', 'i feel feverish', 'fever tips', 'cold tips', 'i have flu', 'flu tips'],
+        responses: [
+            "Sorry to hear that! 🤒 Here are some tips for cold & fever:\n\n• Drink plenty of warm water and fluids\n• Rest as much as possible\n• Take paracetamol for fever (consult doctor)\n• Have warm soups and ginger tea\n• Use steam inhalation for congestion\n• Keep yourself warm\n\n⚠️ If fever exceeds 103°F (39.4°C), see a doctor immediately!",
+            "Take care! 🌡️ Cold & fever tips:\n\n• Stay hydrated — water, ORS, coconut water\n• Get plenty of sleep and rest\n• Eat light, easily digestible food\n• Honey + ginger + lemon in warm water helps\n• Avoid cold drinks and cold food\n\n⚠️ See a doctor if symptoms last more than 3 days!"
+        ]
+    },
+
+    // Diet & nutrition
+    dietTips: {
+        triggers: ['diet tips', 'healthy diet', 'what should i eat', 'nutrition tips', 'healthy eating', 'balanced diet', 'healthy food tips', 'eating habits'],
+        responses: [
+            "Here are some healthy diet tips! 🥗\n\n• Eat more fruits and vegetables daily\n• Include protein in every meal (eggs, dal, chicken)\n• Avoid processed and junk food\n• Eat smaller portions 4-5 times a day\n• Don't skip breakfast — it's the most important meal\n• Reduce sugar and salt intake\n• Include healthy fats (nuts, avocado, olive oil)\n• Drink 8 glasses of water daily 💧"
+        ]
+    },
+    weightLoss: {
+        triggers: ['how to lose weight', 'weight loss tips', 'i want to lose weight', 'lose weight fast', 'fat loss tips'],
+        responses: [
+            "Here are effective weight loss tips! 💪\n\n• Create a calorie deficit (burn more than you eat)\n• Eat high protein, low carb meals\n• Exercise at least 30 mins daily\n• Drink water before meals\n• Avoid sugary drinks and alcohol\n• Get 7-8 hours of sleep (poor sleep = weight gain)\n• Don't skip meals — eat smart instead\n\n⚠️ Aim for 0.5-1 kg loss per week — slow and steady is healthiest!"
+        ]
+    },
+
+    // Exercise & fitness
+    exerciseTips: {
+        triggers: ['exercise tips', 'fitness tips', 'how to stay fit', 'workout tips', 'daily exercise', 'i want to exercise', 'how to start exercising', 'beginner workout'],
+        responses: [
+            "Great decision to exercise! 💪 Here's how to start:\n\n• Begin with 20-30 mins of walking daily\n• Add bodyweight exercises: pushups, squats, planks\n• Stretch before and after workouts\n• Aim for 150 mins of moderate exercise per week\n• Stay consistent — results take 3-4 weeks to show\n• Mix cardio + strength training for best results\n• Rest 1-2 days per week for recovery\n\n🔥 Even 10 mins of daily movement is better than nothing!"
+        ]
+    },
+    morningRoutine: {
+        triggers: ['morning routine', 'healthy morning routine', 'morning habits', 'good morning habits'],
+        responses: [
+            "Here's a healthy morning routine! ☀️\n\n1. Wake up early (5-7 AM)\n2. Drink a glass of warm water\n3. 10-15 mins of stretching or yoga\n4. Light exercise or walk\n5. Healthy breakfast (eggs, oats, fruits)\n6. Plan your day for 5 mins\n\n💡 A good morning sets the tone for the whole day!"
+        ]
+    },
+
+    // Sleep & rest
+    sleepTips: {
+        triggers: ['sleep tips', 'how to sleep better', 'i cant sleep', "can't sleep", 'insomnia tips', 'improve sleep', 'better sleep', 'sleep problems', 'sleeping issues'],
+        responses: [
+            "Here are tips for better sleep! 😴\n\n• Stick to a consistent sleep schedule\n• Avoid screens 30-60 mins before bed\n• Keep your room cool and dark\n• Avoid caffeine after 3 PM\n• Try deep breathing or meditation before sleep\n• Don't eat heavy meals right before bed\n• Exercise during the day (not late at night)\n\n💡 Adults need 7-9 hours of sleep per night!"
+        ]
+    },
+    howMuchSleep: {
+        triggers: ['how many hours of sleep', 'how much sleep do i need', 'how long should i sleep', 'ideal sleep duration'],
+        responses: [
+            "Recommended sleep by age 😴\n\n• Newborns: 14-17 hours\n• Toddlers: 11-14 hours\n• School kids: 9-11 hours\n• Teens: 8-10 hours\n• Adults: 7-9 hours\n• Seniors: 7-8 hours\n\n💡 Quality matters more than quantity — deep sleep is key!"
+        ]
+    },
+
+    // Mental health
+    stressTips: {
+        triggers: ['i am stressed', 'stress tips', 'how to reduce stress', 'feeling stressed', 'anxiety tips', 'i have anxiety', 'feeling anxious', 'mental health tips', 'i feel overwhelmed'],
+        responses: [
+            "I hear you 💙 Here are tips to manage stress:\n\n• Take slow deep breaths (inhale 4s, hold 4s, exhale 4s)\n• Go for a short walk outside\n• Talk to someone you trust\n• Write down what's bothering you\n• Limit social media and news\n• Practice gratitude — list 3 good things daily\n• Take breaks and rest\n\n⚠️ If stress is affecting daily life, please speak to a mental health professional!",
+            "You're not alone 💙 Managing stress:\n\n• 5-4-3-2-1 grounding: name 5 things you see, 4 you hear, 3 you can touch\n• Meditate for even 5 mins daily\n• Exercise releases stress-relieving endorphins\n• Get enough sleep\n• Avoid alcohol and smoking\n\n💡 It's okay to not be okay — reach out for help when needed!"
+        ]
+    },
+    meditation: {
+        triggers: ['how to meditate', 'meditation tips', 'meditation for beginners', 'how to start meditating'],
+        responses: [
+            "Here's how to start meditating! 🧘\n\n1. Find a quiet spot and sit comfortably\n2. Close your eyes and relax\n3. Focus on your breathing\n4. Inhale slowly for 4 counts\n5. Hold for 4 counts\n6. Exhale for 4 counts\n7. Repeat for 5-10 minutes\n\n💡 Start with just 5 mins a day — consistency is more important than duration!"
+        ]
+    },
+
+    // Hydration
+    waterIntake: {
+        triggers: ['how much water should i drink', 'daily water intake', 'how many glasses of water', 'water intake tips', 'hydration tips', 'am i drinking enough water'],
+        responses: [
+            "Here's your hydration guide! 💧\n\n• Adults should drink 8-10 glasses (2-2.5 litres) daily\n• Drink a glass of water first thing in the morning\n• Drink water before every meal\n• Carry a water bottle everywhere\n• Eat water-rich foods: cucumber, watermelon, oranges\n• Your urine should be light yellow — dark means dehydrated!\n\n💡 Increase intake when exercising or in hot weather!"
+        ]
+    },
+    dehydration: {
+        triggers: ['signs of dehydration', 'am i dehydrated', 'dehydration symptoms', 'dehydration tips'],
+        responses: [
+            "Signs of dehydration to watch out for! 💧\n\n• Dark yellow urine\n• Dry mouth and lips\n• Headache or dizziness\n• Fatigue and low energy\n• Dry skin\n• Less frequent urination\n\n✅ Fix: Drink water immediately, have ORS if severe, eat hydrating fruits!\n\n⚠️ Severe dehydration needs medical attention!"
+        ]
+    },
+
+    // Headache & body pain
+    headacheTips: {
+        triggers: ['i have a headache', 'headache tips', 'how to cure headache', 'headache remedy', 'headache relief', 'my head is hurting', 'head pain'],
+        responses: [
+            "Sorry about the headache! 🤕 Here are some remedies:\n\n• Drink a large glass of water (dehydration is a common cause)\n• Rest in a quiet, dark room\n• Apply a cold or warm compress on forehead\n• Gently massage your temples\n• Take a break from screens\n• Try peppermint oil on temples\n• Get some fresh air\n\n⚠️ If headache is severe or with fever/vomiting, see a doctor!"
+        ]
+    },
+    backPain: {
+        triggers: ['back pain', 'i have back pain', 'back pain tips', 'lower back pain', 'spine pain', 'back pain relief'],
+        responses: [
+            "Back pain relief tips! 🦴\n\n• Apply hot/cold pack to the affected area\n• Do gentle stretches and yoga\n• Avoid sitting for long periods — take breaks\n• Use a supportive chair with good posture\n• Sleep on a firm mattress\n• Strengthen core muscles with exercises\n• Avoid lifting heavy objects incorrectly\n\n⚠️ If pain is severe or radiates to legs, see a doctor!"
+        ]
+    },
+    eyeStrain: {
+        triggers: ['eye strain', 'eyes hurting', 'eye pain', 'tired eyes', 'screen time eyes', 'eye tips'],
+        responses: [
+            "Eye strain tips! 👁️\n\n• Follow 20-20-20 rule: every 20 mins, look 20 feet away for 20 seconds\n• Reduce screen brightness\n• Blink more frequently\n• Use artificial tears/eye drops if needed\n• Keep screen at arm's length\n• Avoid screens in the dark\n• Get regular eye checkups\n\n💡 Blue light glasses can help reduce digital eye strain!"
+        ]
+    },
+
+    // Skin care
+    skinCareTips: {
+        triggers: ['skin care tips', 'healthy skin tips', 'how to get clear skin', 'skin tips', 'glowing skin tips', 'skin care routine'],
+        responses: [
+            "Here's your skin care guide! ✨\n\n• Drink plenty of water — hydration shows on skin\n• Wash face twice daily with gentle cleanser\n• Always moisturize after washing\n• Use SPF sunscreen daily (even indoors)\n• Remove makeup before sleeping\n• Eat antioxidant-rich foods (berries, green tea)\n• Get 7-8 hours of sleep\n• Avoid touching your face frequently\n\n💡 Consistency is key — results show in 4-6 weeks!"
+        ]
+    },
+    acneTips: {
+        triggers: ['acne tips', 'how to remove pimples', 'pimple tips', 'how to get rid of acne', 'acne remedies', 'pimple remedies'],
+        responses: [
+            "Acne tips that actually work! 🌿\n\n• Keep face clean — wash twice daily\n• Don't pop or squeeze pimples\n• Use salicylic acid or benzoyl peroxide products\n• Change pillowcases frequently\n• Drink more water and reduce sugar intake\n• Apply aloe vera gel on affected areas\n• Use non-comedogenic (non-pore-clogging) products\n\n⚠️ For severe acne, consult a dermatologist!"
+        ]
+    },
+
+    // General health
+    bmiInfo: {
+        triggers: ['what is bmi', 'bmi tips', 'how to calculate bmi', 'bmi calculator', 'healthy bmi'],
+        responses: [
+            "BMI (Body Mass Index) explained! 📊\n\nFormula: BMI = weight(kg) / height(m)²\n\nBMI ranges:\n• Under 18.5 = Underweight\n• 18.5 - 24.9 = Normal weight ✅\n• 25 - 29.9 = Overweight\n• 30 and above = Obese\n\n💡 BMI is a general guide — consult a doctor for a complete health assessment!"
+        ]
+    },
+    immunityTips: {
+        triggers: ['how to boost immunity', 'immunity tips', 'boost immune system', 'weak immunity', 'strengthen immunity'],
+        responses: [
+            "Boost your immunity naturally! 🛡️\n\n• Eat citrus fruits (Vitamin C)\n• Add turmeric and ginger to your diet\n• Exercise regularly\n• Get enough sleep (7-8 hours)\n• Manage stress levels\n• Stay hydrated\n• Avoid smoking and excess alcohol\n• Take Vitamin D (sunlight exposure)\n\n💡 A healthy gut = strong immunity — eat probiotic foods like yogurt!"
+        ]
     }
 };
 
@@ -697,9 +826,110 @@ const ChatHeader = React.memo(() => (
     </div>
 ));
 
-const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible }) => {
+// Separate component so it has its own state — cannot use useState inside useMemo
+const AgentConfirmCard = ({ msg, index, setMessages, setPendingAgentAction }) => {
+    const [budget, setBudget] = useState('');
+    return (
+        <div className="message-enter" style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{
+                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.08))',
+                border: '0.5px solid rgba(99,102,241,0.25)',
+                overflow: 'hidden'
+            }}>
+                <div style={{ padding: '10px 14px 8px' }}>
+                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: '0 0 6px' }}>Here&apos;s what I&apos;ll do:</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.07)', marginBottom: 10 }}>
+                        <span style={{ fontSize: 18 }}>{msg.action.emoji}</span>
+                        <div>
+                            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 500, margin: 0 }}>{msg.action.platform}</p>
+                            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: 0 }}>{msg.action.description}</p>
+                        </div>
+                    </div>
+
+                    {/* Budget input — lives in component state, fully reactive */}
+                    <div style={{ marginBottom: 10 }}>
+                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: '0 0 5px' }}>💰 Max budget (₹) — optional</p>
+                        <input
+                            type="number"
+                            placeholder="e.g. 2000  (leave blank = no limit)"
+                            value={budget}
+                            onChange={e => setBudget(e.target.value)}
+                            onKeyDown={e => e.stopPropagation()}
+                            style={{
+                                width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12,
+                                background: 'rgba(255,255,255,0.08)',
+                                border: '0.5px solid rgba(255,255,255,0.2)',
+                                color: 'rgba(255,255,255,0.9)',
+                                outline: 'none', boxSizing: 'border-box'
+                            }}
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                            onClick={async () => {
+                                const budgetNum = budget ? parseInt(budget) : null;
+                                const actionWithBudget = { ...msg.action, budget: budgetNum };
+                                setPendingAgentAction(null);
+                                setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'agent-done', status: 'running' } : m));
+                                const result = await window.buddyAgent.execute(actionWithBudget);
+                                setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                    ...m,
+                                    role: 'buddy',
+                                    text: result?.success
+                                        ? `✅ Done! Opened ${msg.action.platform}${budgetNum ? ` within ₹${budgetNum}` : ''}. Continue from the browser!`
+                                        : `⚠️ ${result?.error || 'Something went wrong'}`
+                                } : m));
+                            }}
+                            style={{
+                                flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                                background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))',
+                                border: '0.5px solid rgba(99,102,241,0.4)',
+                                color: 'rgba(214,221,255,0.95)', cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            ✓ Approve
+                        </button>
+                        <button
+                            onClick={() => {
+                                setPendingAgentAction(null);
+                                setMessages(prev => prev.map((m, idx) => idx === index ? { role: 'buddy', text: 'Cancelled! Let me know if you need anything else.', timestamp: m.timestamp } : m));
+                            }}
+                            style={{
+                                padding: '7px 14px', borderRadius: 8, fontSize: 12,
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '0.5px solid rgba(255,255,255,0.1)',
+                                color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+                <div style={{ padding: '6px 14px 8px', borderTop: '0.5px solid rgba(255,255,255,0.05)' }}>
+                    <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, margin: 0 }}>
+                        ⚡ Buddy will open {msg.action.platform} in Chrome and navigate for you
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const messageList = useMemo(() => messages.map((msg, index) => {
+        // Agent confirmation card
+        if (msg.role === 'agent-confirm') {
+            return <AgentConfirmCard key={index} msg={msg} index={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
+        }
+
         const isUser = msg.role === 'user';
         return (
             <div key={index} className={`message-enter flex gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -798,6 +1028,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                 padding: '14px 18px 10px', flexShrink: 0,
                 borderBottom: '0.5px solid rgba(255,255,255,0.05)'
             }}>
+                {/* Left side — title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{
                         width: 24, height: 24, borderRadius: '50%',
@@ -815,59 +1046,63 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                         color: 'rgba(52,211,153,0.8)'
                     }}>gemini-1.5-flash</div>
                 </div>
+
+                {/* Right side — action buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {/* Clear chat button */}
+                    {/* Clear chat */}
                     <button
-                        onClick={() => { setMessages([]); setChatOpen(false); setSidebarVisible(true); }}
+                        onClick={() => { setMessages([]); setChatOpen(false); setSidebarVisible(true); setSettingsOpen(false); }}
                         title="Clear chat"
                         style={{
                             width: 26, height: 26, borderRadius: 8,
-                            border: '0.5px solid rgba(255,255,255,0.08)',
-                            background: 'rgba(255,255,255,0.04)',
+                            border: '0.5px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(255,255,255,0.05)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            cursor: 'pointer', color: 'rgba(255,255,255,0.3)',
+                            cursor: 'pointer', color: 'rgba(255,255,255,0.4)',
                             transition: 'all 0.2s ease'
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.color = 'rgba(239,68,68,0.7)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.2)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; e.currentTarget.style.color = 'rgba(239,68,68,0.8)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
                     >
                         <X size={12} strokeWidth={1.5} />
                     </button>
-                    {/* Settings button */}
+
+                    {/* Settings */}
                     <button
                         onClick={() => setSettingsOpen(prev => !prev)}
                         title="Settings"
                         style={{
                             width: 26, height: 26, borderRadius: 8,
-                            border: '0.5px solid rgba(255,255,255,0.08)',
-                            background: settingsOpen ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.04)',
+                            border: `0.5px solid ${settingsOpen ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                            background: settingsOpen ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.05)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            cursor: 'pointer', color: settingsOpen ? 'rgba(139,92,246,0.9)' : 'rgba(255,255,255,0.3)',
+                            cursor: 'pointer',
+                            color: settingsOpen ? 'rgba(139,92,246,0.9)' : 'rgba(255,255,255,0.4)',
                             transition: 'all 0.2s ease'
                         }}
                     >
                         <Settings size={12} strokeWidth={1.5} />
                     </button>
-                    {/* Collapse button */}
+
+                    {/* Collapse */}
                     <button
-                        onClick={() => { setChatOpen(false); setSidebarVisible(true); }}
+                        onClick={() => { setChatOpen(false); setSidebarVisible(true); setSettingsOpen(false); }}
+                        title="Collapse"
                         style={{
                             width: 26, height: 26, borderRadius: 8,
-                            border: '0.5px solid rgba(255,255,255,0.08)',
-                            background: 'rgba(255,255,255,0.04)',
+                            border: '0.5px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(255,255,255,0.05)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            cursor: 'pointer', color: 'rgba(255,255,255,0.3)',
+                            cursor: 'pointer', color: 'rgba(255,255,255,0.4)',
                             transition: 'all 0.2s ease'
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
                     >
                         <ChevronDown size={12} strokeWidth={1.5} />
                     </button>
                 </div>
             </div>
-
-            <SettingsPanel visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
             <div className="overflow-y-auto px-5 pb-4 flex flex-col gap-[12px]" style={{ maxHeight: 370 }}>
                 {messageList}
@@ -898,6 +1133,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                 )}
                 <div ref={chatEndRef} />
             </div>
+            <SettingsPanel visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
         </div>
     );
 });
@@ -1018,8 +1254,91 @@ const SettingsPanel = React.memo(({ visible, onClose }) => (
     </div>
 ));
 
+const parseAgentCommand = (text) => {
+    const lower = text.toLowerCase().trim();
+
+    // Food ordering
+    if (lower.includes('zomato') || (lower.includes('order') && lower.includes('food')) || (lower.includes('order') && lower.includes('eat'))) {
+        const query = lower.replace(/order|food|from|zomato|on|me|i want|get/g, '').trim() || 'food';
+        return {
+            type: 'zomato_search',
+            query,
+            platform: 'Zomato',
+            description: `Search for "${query}" on Zomato`,
+            emoji: '🍔'
+        };
+    }
+    if (lower.includes('swiggy')) {
+        const query = lower.replace(/order|food|from|swiggy|on|me|i want|get/g, '').trim() || 'food';
+        return {
+            type: 'swiggy_search',
+            query,
+            platform: 'Swiggy',
+            description: `Search for "${query}" on Swiggy`,
+            emoji: '🍕'
+        };
+    }
+
+    // Shopping
+    if (lower.includes('amazon') || (lower.includes('order') && lower.includes('product'))) {
+        const query = lower.replace(/order|buy|get|from|amazon|on|me|i want|product/g, '').trim() || 'product';
+        return {
+            type: 'amazon_search',
+            query,
+            platform: 'Amazon',
+            description: `Search for "${query}" on Amazon`,
+            emoji: '📦'
+        };
+    }
+    if (lower.includes('flipkart')) {
+        const query = lower.replace(/order|buy|get|from|flipkart|on|me|i want/g, '').trim() || 'product';
+        return {
+            type: 'flipkart_search',
+            query,
+            platform: 'Flipkart',
+            description: `Search for "${query}" on Flipkart`,
+            emoji: '🛍️'
+        };
+    }
+
+    // Cab booking
+    if (lower.includes('ola') || (lower.includes('book') && lower.includes('cab'))) {
+        const destination = lower.replace(/book|cab|ola|ride|to|a|an|me/g, '').trim();
+        return {
+            type: 'ola_open',
+            destination,
+            platform: 'Ola',
+            description: `Book an Ola cab${destination ? ` to "${destination}"` : ''}`,
+            emoji: '🚕'
+        };
+    }
+    if (lower.includes('uber')) {
+        return {
+            type: 'uber_open',
+            platform: 'Uber',
+            description: 'Open Uber to book a ride',
+            emoji: '🚗'
+        };
+    }
+
+    // Movie tickets
+    if (lower.includes('bookmyshow') || (lower.includes('book') && lower.includes('ticket')) || (lower.includes('book') && lower.includes('movie'))) {
+        const movie = lower.replace(/book|ticket|tickets|movie|on|bookmyshow|for|me|watch/g, '').trim();
+        return {
+            type: 'bookmyshow_search',
+            movie,
+            platform: 'BookMyShow',
+            description: `Search for "${movie || 'movies'}" on BookMyShow`,
+            emoji: '🎬'
+        };
+    }
+
+    return null;
+};
+
 const Spotlight = React.memo(() => {
     const [messages, setMessages] = useState(() => getHistory());
+    const [pendingAgentAction, setPendingAgentAction] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isTyping, setIsTyping] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
@@ -1043,6 +1362,28 @@ const Spotlight = React.memo(() => {
     useEffect(() => {
         loadingRef.current = isLoading;
     }, [isLoading]);
+
+    useEffect(() => {
+        if (!window.electronAPI) return;
+
+        const handler = (_, action) => {
+            console.log("📥 Agent approval received:", action);
+            setMessages(prev => [...prev, {
+                role: 'agent-confirm',
+                action,
+                timestamp: Date.now()
+            }]);
+            setPendingAgentAction(action);
+            setChatOpen(true);
+            setSidebarVisible(false);
+        };
+
+        window.electronAPI.onAgentApproval(handler);
+
+        return () => {
+            window.electronAPI.removeAgentApproval(handler);
+        };
+    }, []);
 
     const handleSplashDone = useCallback(() => {
         setShowSplash(false);
@@ -1093,86 +1434,80 @@ const Spotlight = React.memo(() => {
 
     const handleSubmit = useCallback(async (textOverride = null) => {
         const finalText = typeof textOverride === 'string' ? textOverride.trim() : '';
-        if (!finalText || loadingRef.current) {
-            return false;
-        }
+        if (!finalText || loadingRef.current) return false;
 
         setChatOpen(true);
         setSidebarVisible(false);
         inputRef.current?.clear();
 
-        if (isAppCommand(finalText)) {
-            window.electronAPI?.sendBuddyCommand(finalText);
-            setMessages((prev) => {
-                const nextMessages = [
-                    ...prev,
-                    { role: 'user', text: finalText, timestamp: Date.now() },
-                    { role: 'buddy', text: `Done! Running: "${finalText}"`, timestamp: Date.now() }
-                ];
+        const lower = finalText.toLowerCase().trim();
+        const userMsg = { role: 'user', text: finalText, timestamp: Date.now() };
 
-                addMessages(nextMessages.slice(prev.length));
-                return nextMessages;
-            });
-            return true;
-        }
-
-        // Check for math expression first
+        // ── 1. Math ──────────────────────────────────────────────────────────────
         const mathResult = evaluateMath(finalText);
         if (mathResult) {
-            setSidebarVisible(false);
-            setChatOpen(true);
+            setMessages(prev => [...prev, userMsg]);
+            addMessage(userMsg);
             setIsTyping(true);
-            setMessages(prev => [...prev, { role: 'user', text: finalText, timestamp: Date.now() }]);
             setTimeout(() => {
                 setIsTyping(false);
-                setMessages(prev => [...prev, { role: 'buddy', text: mathResult, timestamp: Date.now() }]);
+                const r = { role: 'buddy', text: mathResult, timestamp: Date.now() };
+                setMessages(prev => [...prev, r]);
+                addMessage(r);
             }, 300);
             return true;
         }
 
-        // Check for close/exit commands
-        const closeKeywords = [
-            'close the app', 'close app', 'close buddy', 'exit', 'exit app',
-            'quit', 'quit app', 'close the tab', 'close tab', 'shut down',
-            'goodbye buddy', 'bye buddy', 'see you buddy', 'close now'
-        ];
-        const lowerFinalText = finalText.toLowerCase().trim();
-        const isCloseCommand = closeKeywords.some(k => lowerFinalText === k || lowerFinalText.includes(k));
-
-        if (isCloseCommand) {
-            setMessages(prev => [...prev,
-            { role: 'user', text: finalText, timestamp: Date.now() },
-            { role: 'buddy', text: "Goodbye! See you next time 👋\nPress Ctrl+Alt+B to bring me back anytime.", timestamp: Date.now() }
-            ]);
-            setChatOpen(true);
-            setSidebarVisible(false);
-            setTimeout(() => {
-                if (window.electronAPI?.closeApp) {
-                    window.electronAPI.closeApp();
-                }
-            }, 1500);
+        // ── 2. Close/exit ─────────────────────────────────────────────────────
+        const closeKeywords = ['close the app','close app','close buddy','exit','exit app','quit','quit app','shut down','goodbye buddy','bye buddy','close now'];
+        if (closeKeywords.some(k => lower === k || lower.includes(k))) {
+            const byeMsg = { role: 'buddy', text: "Goodbye! See you next time 👋\nPress Ctrl+Alt+B to bring me back anytime.", timestamp: Date.now() };
+            setMessages(prev => [...prev, userMsg, byeMsg]);
+            addMessages([userMsg, byeMsg]);
+            setTimeout(() => window.electronAPI?.closeApp(), 1500);
             return true;
         }
 
+        // ── 3. Agent commands → backend via IPC ──────────────────────────────
+        const agentKeywords = ['order', 'buy', 'zomato', 'swiggy', 'amazon', 'flipkart', 'uber', 'ola', 'bookmyshow'];
+        const isAgentCmd = agentKeywords.some(w => lower.includes(w))
+            || (lower.includes('book') && (lower.includes('cab') || lower.includes('movie') || lower.includes('ticket')));
+
+        if (isAgentCmd) {
+            setMessages(prev => [...prev, userMsg]);
+            addMessage(userMsg);
+            // Send to backend — backend detects intent, sends agent-approval IPC back
+            window.electronAPI?.sendBuddyCommand(finalText);
+            return true;
+        }
+
+        // ── 4. App launcher commands → backend ───────────────────────────────
+        if (isAppCommand(finalText)) {
+            setMessages(prev => [...prev, userMsg]);
+            addMessage(userMsg);
+            window.electronAPI?.sendBuddyCommand(finalText);
+            return true;
+        }
+
+        // ── 5. Local responses ────────────────────────────────────────────────
         const localResponse = getLocalResponse(finalText, lastUsedResponsesRef);
         if (localResponse) {
-            setSidebarVisible(false);
-            setChatOpen(true);
-            setMessages(prev => [...prev, { role: 'user', text: finalText, timestamp: Date.now() }]);
+            setMessages(prev => [...prev, userMsg]);
+            addMessage(userMsg);
             setIsTyping(true);
             setTimeout(() => {
                 setIsTyping(false);
-                setMessages(prev => [...prev, { role: 'buddy', text: localResponse, timestamp: Date.now() }]);
+                const r = { role: 'buddy', text: localResponse, timestamp: Date.now() };
+                setMessages(prev => [...prev, r]);
+                addMessage(r);
             }, 600 + Math.random() * 400);
             return true;
         }
 
-        const currentMessages = messagesRef.current;
-        const userMessage = { role: 'user', text: finalText, timestamp: Date.now() };
-        const updatedMessages = [...currentMessages, userMessage];
-
+        // ── 6. Gemini AI ─────────────────────────────────────────────────────
+        const updatedMessages = [...messagesRef.current, userMsg];
         setMessages(updatedMessages);
-        addMessage(userMessage);
+        addMessage(userMsg);
         setIsLoading(true);
 
         try {
@@ -1386,7 +1721,7 @@ const Spotlight = React.memo(() => {
                     }} />
                     <div className="w-full flex flex-col">
                         <ChatHeader />
-                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} />
+                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} />
                         {messages.length === 0 && !chatOpen && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
