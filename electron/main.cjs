@@ -1,6 +1,7 @@
 const path = require("path")
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") })
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
+console.log("MAIN FILE EXECUTED");
 console.log("OPENAI_API_KEY loaded:", process.env.OPENAI_API_KEY ? "YES" : "NO")
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain } = require("electron")
 app.disableHardwareAcceleration()
@@ -11,15 +12,29 @@ const { spawn } = require("child_process")
 const { GoogleGenerativeAI } = require("@google/generative-ai")
 const puppeteer = require('puppeteer-core')
 
+function sanitizeActionForLog(action) {
+    if (!action || typeof action !== 'object') return action;
+    const safe = { ...action };
+    if (safe.credentials) {
+        safe.credentials = {
+            email: safe.credentials.email ? '[REDACTED_EMAIL]' : '',
+            password: safe.credentials.password ? '[REDACTED_PASSWORD]' : ''
+        };
+    }
+    return safe;
+}
+
 // Find Chrome executable path on Windows
 function getChromeExecutablePath() {
     const paths = [
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+        path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
+        path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
     ];
-    const fs = require('fs');
     for (const p of paths) {
+        if (!p) continue;
         try {
             if (fs.existsSync(p)) return p;
         } catch {}
@@ -187,65 +202,9 @@ async function resumeAgentAction(page, action, checkLoginBreak) {
                 break;
 
             case 'amazon_search': {
-                console.log('[Agent] Waiting for Amazon search results... budget:', action.budget || 'none');
-                await Promise.race([
-                    page.waitForSelector('[data-component-type="s-search-result"]', { timeout: 8000 }),
-                    page.waitForSelector('.s-result-item[data-asin]', { timeout: 8000 }),
-                    page.waitForSelector('.s-main-slot', { timeout: 8000 }),
-                ]).catch(() => {});
-                await new Promise(r => setTimeout(r, 2000));
-                await checkLoginBreak();
-
-                // Extract product URL, optionally filtered by budget
-                const budget = action.budget || null;
-                const productUrl = await page.evaluate((maxBudget) => {
-                    const selectors = [
-                        'h2 a[href*="/dp/"]',
-                        '[data-component-type="s-search-result"] a[href*="/dp/"]',
-                        '.s-result-item[data-asin] a[href*="/dp/"]',
-                        'a[href*="/dp/"]',
-                    ];
-
-                    // Build list of result cards with their prices
-                    const cards = Array.from(document.querySelectorAll(
-                        '[data-component-type="s-search-result"], .s-result-item[data-asin]'
-                    ));
-
-                    for (const card of cards) {
-                        // Skip sponsored if budget is set — they tend to be pricier
-                        const link = card.querySelector('h2 a[href*="/dp/"]') ||
-                                     card.querySelector('a[href*="/dp/"]');
-                        if (!link || link.offsetWidth === 0 || !link.href) continue;
-
-                        if (maxBudget) {
-                            // Try to extract price from the card
-                            const priceEl = card.querySelector('.a-price .a-offscreen, .a-price-whole, [data-a-color="base"] .a-offscreen');
-                            if (priceEl) {
-                                const raw = priceEl.textContent.replace(/[₹,\s]/g, '').trim();
-                                const price = parseFloat(raw);
-                                if (!isNaN(price) && price > maxBudget) {
-                                    console.log('[skip]', link.href.substring(0, 60), 'price:', price, '> budget:', maxBudget);
-                                    continue; // skip this — over budget
-                                }
-                                console.log('[pick]', link.href.substring(0, 60), 'price:', price);
-                            }
-                        }
-                        return link.href;
-                    }
-
-                    // Fallback: if budget found nothing, just return first link
-                    for (const sel of ['h2 a[href*="/dp/"]', 'a[href*="/dp/"]']) {
-                        const links = Array.from(document.querySelectorAll(sel));
-                        const visible = links.find(l => l.offsetWidth > 0 && l.href);
-                        if (visible) return visible.href;
-                    }
-                    return null;
-                }, budget);
-
-                console.log('[Agent] Amazon product URL:', productUrl);
-
-                if (productUrl) {
-                    await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+                if (action.selectedProduct) {
+                    console.log('[Agent] Navigating to selected product:', action.selectedProduct);
+                    await page.goto(action.selectedProduct, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
                     await new Promise(r => setTimeout(r, 2500));
                     await checkLoginBreak();
                     console.log('[Agent] On product page:', page.url());
@@ -272,10 +231,151 @@ async function resumeAgentAction(page, action, checkLoginBreak) {
                     console.log('[Agent] Add to Cart clicked via:', cartClicked);
                     await new Promise(r => setTimeout(r, 2500));
                     await checkLoginBreak();
-                } else {
-                    console.log('[Agent] No product URL found — page title:', await page.title().catch(() => 'n/a'));
+                    break;
                 }
-                break;
+
+                if (action.loadMoreOptions) {
+                    console.log('[Agent] Loading more options (scrolling down)...');
+                    await page.evaluate(() => window.scrollBy(0, 1500));
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    console.log('[Agent] Waiting for Amazon search results... budget:', action.budget !== null && action.budget !== undefined ? action.budget : 'none');
+                    await Promise.race([
+                        page.waitForSelector('[data-component-type="s-search-result"]', { timeout: 8000 }),
+                        page.waitForSelector('.s-result-item[data-asin]', { timeout: 8000 }),
+                        page.waitForSelector('.s-main-slot', { timeout: 8000 }),
+                    ]).catch(() => {});
+                    await new Promise(r => setTimeout(r, 2000));
+                    await checkLoginBreak();
+                }
+
+                // Get all product cards with their prices, links, and ratings
+                const products = await page.evaluate(() => {
+                    const cards = document.querySelectorAll('[data-component-type="s-search-result"]');
+                    const results = [];
+
+                    cards.forEach(card => {
+                        // Try multiple price selectors
+                        const priceEl = card.querySelector('.a-price .a-offscreen') ||
+                                        card.querySelector('.a-price-whole') ||
+                                        card.querySelector('[data-a-color="price"] .a-offscreen');
+
+                        // Try multiple link selectors
+                        const linkEl = card.querySelector('h2 a[href*="/dp/"]') ||
+                                       card.querySelector('a[href*="/dp/"]');
+                                       
+                        const ratingEl = card.querySelector('.a-icon-alt');
+
+                        if (!linkEl) return;
+
+                        let price = null;
+                        if (priceEl) {
+                            // Clean price string — remove ₹, commas, spaces
+                            const priceText = priceEl.textContent.replace(/[₹,\s]/g, '').trim();
+                            const parsed = parseFloat(priceText);
+                            if (!isNaN(parsed)) price = parsed;
+                        }
+
+                        let rating = 0;
+                        if (ratingEl) {
+                            const ratingMatches = ratingEl.textContent.match(/([\d.]+)\s*out of/);
+                            if (ratingMatches && ratingMatches[1]) {
+                                rating = parseFloat(ratingMatches[1]);
+                            } else {
+                                const parsed = parseFloat(ratingEl.textContent);
+                                if (!isNaN(parsed)) rating = parsed;
+                            }
+                        }
+
+                        results.push({
+                            url: linkEl.href,
+                            price: price,
+                            rating: rating,
+                            title: card.querySelector('h2')?.textContent?.trim() || 'Unknown product'
+                        });
+                    });
+
+                    return results;
+                });
+
+                console.log('[Agent] Found products:', products.map(p => `${p.title.slice(0,30)} - ₹${p.price} ⭐${p.rating}`));
+
+                const budget = action.budget ? parseFloat(action.budget) : null;
+
+                if (budget && !isNaN(budget)) {
+                    console.log(`[Agent] Applying budget filter: ₹${budget}`);
+                    const validProducts = products.filter(p => p.price !== null && p.price <= budget);
+
+                    if (validProducts.length === 0) {
+                        const priced = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price);
+                        const cheapestItem = priced[0] || null;
+                        console.log('[Agent] No products within budget');
+                        return {
+                            success: false,
+                            budgetExceeded: true,
+                            cheapestAvailable: cheapestItem ? cheapestItem.price : null,
+                            cheapestTitle: cheapestItem ? cheapestItem.title.slice(0, 50) : null,
+                            originalBudget: budget,
+                            error: `No products found within ₹${budget}`
+                        };
+                    }
+
+                    // Sort valid products intelligently
+                    const ranked = validProducts.sort((a, b) => {
+                        // Tie breaker: sort by rating descending
+                        if (b.price !== a.price) return b.price - a.price; // closer to budget
+                        return b.rating - a.rating;
+                    });
+
+                    const topOptions = ranked.slice(0, 5);
+
+                    console.log("Skipping selection temporarily");
+                    return {
+                        success: true,
+                        selectedOption: topOptions[0] || null,
+                        message: topOptions[0] ? 'Selection skipped temporarily' : 'No selectable option available'
+                    };
+                } else {
+                    // No budget — pick first product that has a valid URL
+                    const selectedProduct = products.find(p => p.url);
+                    console.log('[Agent] No budget set — picking first product');
+                    
+                    if (!selectedProduct || !selectedProduct.url) {
+                        console.log('[Agent] No products found on this page.');
+                        return { success: false, error: 'No products found on this page.' };
+                    }
+    
+                    // Navigate to product page
+                    console.log('[Agent] Navigating to:', selectedProduct.url);
+                    await page.goto(selectedProduct.url, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 2500));
+                    await checkLoginBreak();
+                    console.log('[Agent] On product page:', page.url());
+    
+                    const cartClicked = await page.evaluate(() => {
+                        const addToCartInput = document.querySelector('#add-to-cart-button');
+                        if (addToCartInput && addToCartInput.offsetWidth > 0) {
+                            addToCartInput.scrollIntoView({ block: 'center' });
+                            addToCartInput.click();
+                            return 'input#add-to-cart-button';
+                        }
+                        const els = Array.from(document.querySelectorAll('input[type="submit"], button'));
+                        for (const el of els) {
+                            const text = (el.value || el.innerText || '').toLowerCase();
+                            if ((text.includes('add to cart') || text.includes('add to basket')) && el.offsetWidth > 0) {
+                                el.scrollIntoView({ block: 'center' });
+                                el.click();
+                                return 'fallback: ' + text.substring(0, 30);
+                            }
+                        }
+                        return null;
+                    });
+    
+                    console.log('[Agent] Add to Cart clicked via:', cartClicked);
+                    await new Promise(r => setTimeout(r, 2500));
+                    await checkLoginBreak();
+                    break;
+                }
             }
 
 
@@ -350,119 +450,944 @@ async function resumeAgentAction(page, action, checkLoginBreak) {
 }
 
 
-async function executeAgentAction(action) {
-    console.log("[Agent] Triggered with action:", JSON.stringify(action));
-    const chromePath = getChromeExecutablePath();
-    if (!chromePath) throw new Error('Chrome not found on this system');
+async function executeAmazonStableFlow(page, action) {
+    let productUrl = null;
 
-    // Normalize 'order' type from frontend into proper typed action
-    if (action.type === 'order' || !action.type) {
-        const plat = (action.platform || '').toLowerCase();
-        if (plat.includes('amazon')) {
-            action.type = 'amazon_search';
-            action.query = action.query || action.description || 'product';
-        } else if (plat.includes('flipkart')) {
-            action.type = 'flipkart_search';
-            action.query = action.query || action.description || 'product';
-        } else if (plat.includes('zomato')) {
-            action.type = 'zomato_search';
-            action.query = action.query || action.description || 'food';
-        } else if (plat.includes('swiggy')) {
-            action.type = 'swiggy_search';
-            action.query = action.query || action.description || 'food';
-        } else {
-            action.type = 'amazon_search';
-            action.query = action.query || action.description || 'product';
-        }
-        console.log('[Agent] Normalized action type to:', action.type, 'query:', action.query);
+    if (action.selectedProduct) {
+        productUrl = action.selectedProduct;
+    } else {
+        const searchUrl = 'https://www.amazon.in/s?k=' + encodeURIComponent(action.query || 'product');
+        console.log('[Agent] Searching Amazon for:', action.query, '| budget:', action.budget);
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForSelector('[data-component-type="s-search-result"]', { timeout: 10000 });
+
+        const products = await page.evaluate(() => {
+            const items = document.querySelectorAll('[data-component-type="s-search-result"]');
+
+            return Array.from(items).map(item => {
+                const link = item.querySelector("a[href*='/dp/']")?.href || null;
+                const priceText = item.querySelector('.a-price .a-offscreen')?.innerText || null;
+                const price = priceText ? parseInt(priceText.replace(/[^\d]/g, ''), 10) : null;
+
+                return { link, price };
+            }).filter(p => p.link && p.price);
+        });
+
+        const budget = action.budget ? parseInt(action.budget, 10) : null;
+        const valid = budget ? products.filter(p => p.price <= budget) : products;
+        productUrl = valid[0]?.link || null;
     }
 
-    const browser = await puppeteer.launch({
-        executablePath: chromePath,
-        headless: false,
-        defaultViewport: null,
-        args: ['--start-maximized']
+    if (!productUrl) {
+        throw new Error('No valid product found');
+    }
+
+    console.log('🛒 Selected product:', productUrl);
+    await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForSelector('#add-to-cart-button', { timeout: 10000 });
+
+    await page.evaluate(() => {
+        const btn = document.querySelector('#add-to-cart-button');
+        if (btn) btn.click();
     });
 
-    const page = await browser.newPage();
+    console.log('✅ Added to cart');
+    await new Promise(r => setTimeout(r, 2500));
 
-    try {
-        console.log('[Agent] Navigating for type:', action.type);
-        switch (action.type) {
-            case 'zomato_search':
-                await page.goto(`https://www.zomato.com/search?q=${encodeURIComponent(action.query)}`, { waitUntil: 'networkidle2' });
-                break;
-            case 'swiggy_search':
-                await page.goto(`https://www.swiggy.com/search?query=${encodeURIComponent(action.query)}`, { waitUntil: 'networkidle2' });
-                break;
-            case 'amazon_search':
-                await page.goto('https://www.amazon.in', { waitUntil: 'networkidle2' });
-                if (action.query) {
-                    await page.waitForSelector("input[name='field-keywords']", { timeout: 8000 });
-                    await page.type("input[name='field-keywords']", action.query, { delay: 60 });
-                    await page.keyboard.press('Enter');
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-                    console.log('[Agent] Amazon search done, now on:', page.url());
-                }
-                break;
-            case 'flipkart_search':
-                await page.goto(`https://www.flipkart.com/search?q=${encodeURIComponent(action.query)}`, { waitUntil: 'networkidle2' });
-                break;
-            case 'ola_open':
-                await page.goto('https://book.olacabs.com/', { waitUntil: 'networkidle2' });
-                break;
-            case 'uber_open':
-                await page.goto('https://m.uber.com/looking', { waitUntil: 'networkidle2' });
-                break;
-            case 'bookmyshow_search':
-                await page.goto(`https://in.bookmyshow.com/explore/movies/${action.city || 'chennai'}`, { waitUntil: 'networkidle2' });
-                break;
-            case 'google_search':
-                await page.goto(`https://www.google.com/search?q=${encodeURIComponent(action.query)}`, { waitUntil: 'networkidle2' });
-                break;
-            case 'open_url':
-                await page.goto(action.url, { waitUntil: 'networkidle2' });
-                break;
-            default:
-                throw new Error(`Unknown action type: ${action.type}`);
+    await page.goto('https://www.amazon.in/gp/cart/view.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    const proceedBtn = await page.$("input[name='proceedToRetailCheckout']");
+    if (proceedBtn) {
+        await proceedBtn.click();
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+    }
+
+    return { success: true, message: 'Added to cart and proceeded to checkout', productUrl, currentUrl: page.url() };
+}
+
+async function executeAgentAction(action) {
+    console.log("🚀 EXECUTION START:", sanitizeActionForLog(action));
+    if (!action) {
+        throw new Error("Invalid action");
+    }
+    if (!action.query) {
+        action.query = "";
+    }
+    // Reuse existing page for selectedProduct, loadMoreOptions, or checkout steps
+    let existingPage = action.page || null;
+    if (!existingPage && global.activePage && (action.selectedProduct || action.loadMoreOptions)) {
+        existingPage = global.activePage;
+    }
+
+    let browser = null, page;
+    if (existingPage) {
+        page = existingPage;
+        console.log('[Agent] Using existing active browser page');
+    } else {
+        console.log('[Agent] Action received:', action.type, '| budget:', action.budget);
+        const chromePath = getChromeExecutablePath();
+        console.log('[Agent] Chrome path found:', chromePath);
+        
+        if (!chromePath) {
+            console.error('[Agent] ERROR: Chrome not found on this system');
+            throw new Error('Chrome not found on this system. Please install Google Chrome.');
         }
 
-        // Brief wait for modals
-        await new Promise(resolve => setTimeout(resolve, 1200));
+        // Normalize 'order' type from frontend into proper typed action
+        if (action.type === 'order' || !action.type) {
+            const plat = (action.platform || '').toLowerCase();
+            if (plat.includes('amazon')) {
+                action.type = 'amazon_search';
+                action.query = action.query || action.description || 'product';
+            } else if (plat.includes('flipkart')) {
+                action.type = 'flipkart_search';
+                action.query = action.query || action.description || 'product';
+            } else if (plat.includes('zomato')) {
+                action.type = 'zomato_search';
+                action.query = action.query || action.description || 'food';
+            } else if (plat.includes('swiggy')) {
+                action.type = 'swiggy_search';
+                action.query = action.query || action.description || 'food';
+            } else {
+                action.type = 'amazon_search';
+                action.query = action.query || action.description || 'product';
+            }
+            console.log('[Agent] Normalized action type to:', action.type, 'query:', action.query);
+        }
 
-        const checkLoginBreak = async () => {
+        console.log('[Agent] Launching browser...');
+        try {
+            browser = await puppeteer.launch({
+                executablePath: chromePath,
+                headless: false,
+                defaultViewport: { width: 1280, height: 800 },
+                args: ['--start-maximized', '--window-size=1280,800']
+            });
+            console.log('[Agent] Browser launched successfully');
+        } catch (launchError) {
+            console.error('[Agent] FAILED to launch browser:', launchError.message);
+            throw new Error(`Failed to launch browser: ${launchError.message}`);
+        }
+
+        // Use the first page that's automatically opened
+        const pages = await browser.pages();
+        page = pages.length > 0 ? pages[0] : await browser.newPage();
+        if (!page) {
+            page = await browser.newPage();
+        }
+        global.activePage = page;
+        global.activeBrowser = browser; // Store browser reference
+
+        browser.on('disconnected', () => {
+            if (global.activePage === page) {
+                global.activePage = null;
+                global.activeBrowser = null;
+                console.log('[Agent] Browser closed — session ended');
+            }
+        });
+    }
+
+    const checkLoginBreak = async () => {
+        try {
             const needsLogin = await detectLoginRequirement(page);
             if (needsLogin) {
                 console.log('[Agent] Login wall detected, pausing automation');
                 throw new Error('LOGIN_REQUIRED');
             }
-        };
+        } catch (e) {
+            if (e.message === 'LOGIN_REQUIRED') throw e;
+            console.warn('[Agent] Login check failed (non-critical):', e.message);
+        }
+    };
 
-        const needsLogin = await detectLoginRequirement(page);
-        console.log('[Agent] Login check result:', needsLogin);
-        if (needsLogin) throw new Error('LOGIN_REQUIRED');
+    try {
+        console.log('[Agent] Executing action type:', action.type);
+        if (action.type === 'amazon_search') {
+            await page.goto(`https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
-        console.log('[Agent] Calling resumeAgentAction for:', action.type);
-        await resumeAgentAction(page, action, checkLoginBreak);
-        console.log('[Agent] Done!');
-        return { success: true, message: 'Done! You can continue from the browser.' };
+            const budget = action.budget ? parseFloat(action.budget) : null;
+
+            const products = await page.evaluate(() => {
+                const cards = document.querySelectorAll('[data-component-type="s-search-result"]');
+                const results = [];
+                cards.forEach(card => {
+                    const linkEl = card.querySelector('h2 a[href*="/dp/"]') || card.querySelector('a[href*="/dp/"]');
+                    const priceEl = card.querySelector('.a-price .a-offscreen');
+                    if (!linkEl) return;
+                    let price = null;
+                    if (priceEl) {
+                        const cleaned = priceEl.textContent.replace(/[₹,\s]/g, '').trim();
+                        const parsed = parseFloat(cleaned);
+                        if (!isNaN(parsed)) price = parsed;
+                    }
+                    results.push({
+                        url: linkEl.href,
+                        price,
+                        title: card.querySelector('h2')?.textContent?.trim() || ''
+                    });
+                });
+                return results;
+            });
+
+            console.log('[Agent] Products found:', products.length);
+            console.log('[Agent] Budget:', budget);
+            products.forEach(p => console.log(`  ₹${p.price} - ${p.title?.slice(0,40)}`));
+
+            let selected = null;
+            if (budget && !isNaN(budget)) {
+                selected = products.find(p => p.price !== null && p.price <= budget);
+                if (!selected) {
+                    const sorted = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price);
+                    const cheapest = sorted[0];
+                    return {
+                        success: false,
+                        budgetExceeded: true,
+                        cheapestAvailable: cheapest?.price || null,
+                        cheapestTitle: cheapest?.title?.slice(0, 50) || null,
+                        originalBudget: budget,
+                        error: `No products within ₹${budget}`
+                    };
+                }
+            } else {
+                selected = products[0];
+            }
+
+            if (!selected) return { success: false, error: 'No products found' };
+
+            console.log('[Agent] Selected:', selected.title?.slice(0,40), '₹', selected.price);
+            await page.goto(selected.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            const addedToCart = await page.evaluate(() => {
+                const btn = document.querySelector('#add-to-cart-button') ||
+                    document.querySelector('input[name="submit.add-to-cart"]') ||
+                    Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Add to Cart'));
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
+                return false;
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return {
+                success: true,
+                addedToCart,
+                productTitle: selected.title?.slice(0, 50),
+                productPrice: selected.price
+            };
+        }
+        // ... rest of the logic ...
+
+        // ── Checkout / poll steps (operate on existing page, return directly) ──
+        if (action.type === 'amazon_goto_checkout') {
+            try {
+                await page.goto('https://www.amazon.in/gp/cart/view.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                const clicked = await page.evaluate(() => {
+                    const selectors = ['#sc-buy-box-ptc-button', 'input[name="proceedToRetailCheckout"]'];
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    const all = Array.from(document.querySelectorAll('input,button,a'));
+                    const btn = all.find(e => (e.value || e.textContent || '').includes('Proceed to Buy'));
+                    if (btn) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                });
+
+                await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+                const url = page.url();
+                return { success: true, needsLogin: url.includes('signin') || url.includes('ap/'), currentUrl: url, clicked };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'amazon_poll_login') {
+            try {
+                const url = page.url();
+                const onLoginPage = url.includes('signin') || url.includes('ap/signin') || url.includes('ap/login');
+                if (!onLoginPage) {
+                    const isLoggedIn = await page.evaluate(() => !document.querySelector('#ap_email, #signInSubmit'));
+                    return { success: true, isLoggedIn, currentUrl: url };
+                }
+                return { success: true, isLoggedIn: false, currentUrl: url };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'amazon_poll_address') {
+            try {
+                const addressMissing = await page.evaluate(() =>
+                    document.body.innerText.includes("Add delivery address") ||
+                    !!document.querySelector("input[name='address-ui-widgets-enterAddressFullName']")
+                );
+                return { success: true, hasAddress: !addressMissing, currentUrl: page.url() };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'amazon_submit_address') {
+            try {
+                console.log("[Agent] Address added - resuming flow");
+                const deliverBtn = await page.$("input[name='shipToThisAddress'], input[data-testid='Address_selectShipToThisAddress']");
+                if (deliverBtn) {
+                    await deliverBtn.click();
+                    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+                } else {
+                    await page.evaluate(() => {
+                        const btns = Array.from(document.querySelectorAll('input[type="submit"], button, a'));
+                        const btn = btns.find(b => {
+                            const t = (b.value || b.textContent || '').toLowerCase();
+                            return t.includes('deliver to this address') || t.includes('use this address');
+                        });
+                        if (btn) btn.click();
+                    });
+                    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+                }
+                const currentUrl = page.url();
+                const needsLogin = currentUrl.includes('signin') || currentUrl.includes('ap/signin') || currentUrl.includes('ap/login');
+                return { success: true, needsLogin, currentUrl };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'flipkart_goto_checkout') {
+            try {
+                await page.goto('https://www.flipkart.com/viewcart', { waitUntil: 'networkidle2', timeout: 15000 });
+                const placeOrderBtn = await page.$('button[class*="place"], a[class*="place"], button[class*="checkout"]');
+                if (placeOrderBtn) {
+                    await placeOrderBtn.click();
+                    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+                }
+                const currentUrl = page.url();
+                const needsLogin = currentUrl.includes('login') || await page.evaluate(() =>
+                    !!document.querySelector('input[type="tel"], input[placeholder*="mobile"], input[placeholder*="email"]')
+                );
+                return { success: true, needsLogin, currentUrl };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'flipkart_poll_login') {
+            try {
+                const isLoggedIn = await page.evaluate(() =>
+                    !document.querySelector('input[type="tel"], input[placeholder*="mobile"]')
+                );
+                return { success: true, isLoggedIn, currentUrl: page.url() };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'zomato_goto_checkout' || action.type === 'swiggy_goto_checkout') {
+            try {
+                const isZomato = action.type === 'zomato_goto_checkout';
+                console.log(`[Agent] Navigating to ${isZomato ? 'Zomato' : 'Swiggy'} cart...`);
+                
+                const cartClicked = await page.evaluate((isZomato) => {
+                    const selectors = isZomato 
+                        ? ['a[href*="/cart"]', 'div[class*="cart"]', 'span[class*="cart"]']
+                        : ['a[href*="/checkout"]', 'span[class*="Cart"]', 'div[class*="Cart"]'];
+                    
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el && el.offsetWidth > 0) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }, isZomato);
+
+                if (!cartClicked) {
+                    // Fallback to direct URL if button not found
+                    await page.goto(isZomato ? 'https://www.zomato.com/cart' : 'https://www.swiggy.com/checkout', { waitUntil: 'networkidle2' });
+                }
+
+                await new Promise(r => setTimeout(r, 3000));
+                await checkLoginBreak();
+                return { success: true, message: `Reached ${isZomato ? 'Zomato' : 'Swiggy'} checkout!` };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        if (action.type === 'amazon_select_payment') {
+            try {
+                console.log('[Agent] Selecting payment method:', action.method);
+                await page.waitForSelector('.payment-method, #pmts-form, .a-section', { timeout: 15000 }).catch(() => {});
+                const { method } = action;
+                
+                const selected = await page.evaluate((method) => {
+                    const labels = Array.from(document.querySelectorAll('label, span, div, input'));
+                    const termMap = {
+                        cod: ['Cash on Delivery', 'Pay on Delivery', 'POD'],
+                        upi: ['UPI', 'Net Banking/UPI'],
+                        card: ['Credit', 'Debit', 'Credit/Debit'],
+                        netbanking: ['Net Banking', 'NetBanking'],
+                        amazonpay: ['Amazon Pay'],
+                    };
+                    const terms = termMap[method] || [];
+                    
+                    // Find the label or input that contains the text
+                    for (const term of terms) {
+                        const el = labels.find(l => l.textContent.includes(term));
+                        if (el) {
+                            el.scrollIntoView({ block: 'center' });
+                            el.click();
+                            return term;
+                        }
+                    }
+                    return null;
+                }, method);
+
+                console.log('[Agent] Payment selection result:', selected);
+
+                if (method === 'upi' && action.upiId) {
+                    console.log('[Agent] Entering UPI ID...');
+                    await page.waitForSelector('input[placeholder*="UPI"], input[name*="upi"]', { timeout: 8000 }).catch(() => {});
+                    const upiInputs = await page.$$('input[placeholder*="UPI"], input[name*="upi"]');
+                    if (upiInputs.length > 0) {
+                        await upiInputs[0].type(action.upiId, { delay: 50 });
+                    }
+                }
+
+                console.log('[Agent] Clicking Continue...');
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a, span'));
+                    const cont = btns.find(b => {
+                        const t = (b.textContent || b.getAttribute?.('value') || '').toLowerCase();
+                        return t.includes('use this payment') || t.includes('continue') || t.includes('use this method');
+                    });
+                    if (cont) {
+                        cont.scrollIntoView({ block: 'center' });
+                        cont.click();
+                    }
+                });
+                
+                await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+                return { success: true, paymentSelected: method };
+            } catch (err) { 
+                console.error('[Agent] Payment selection error:', err.message);
+                return { success: false, error: err.message }; 
+            }
+        }
+
+        if (action.type === 'amazon_place_order') {
+            try {
+                await page.waitForSelector('#submitOrderButtonId, input[name="placeYourOrder1"]', { timeout: 10000 }).catch(() => {});
+                const placeBtn = await page.$('#submitOrderButtonId, input[name="placeYourOrder1"]');
+                if (placeBtn) {
+                    await placeBtn.click();
+                    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {});
+                }
+                const orderPlaced = await page.evaluate(() =>
+                    document.body.innerText.includes('order has been placed') ||
+                    document.body.innerText.includes('Thank you') ||
+                    document.querySelector('.a-alert-success') !== null
+                );
+                return { success: true, orderPlaced, message: orderPlaced ? 'Order placed successfully! \uD83C\uDF89' : 'Reached order confirmation page' };
+            } catch (err) { return { success: false, error: err.message }; }
+        }
+
+        // ── Amazon shopping flow ──────────────────────────────────────────────
+        if (action.type === 'amazon_search') {
+            if (action.selectedProduct) {
+                // User picked from selection card — navigate directly to the product
+                console.log('[Agent] Navigating to user-selected product:', action.selectedProduct);
+                await page.goto(action.selectedProduct, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                await new Promise(r => setTimeout(r, 2500));
+                await checkLoginBreak();
+            } else {
+                if (action.loadMoreOptions) {
+                    console.log('[Agent] Loading more options (scrolling down)...');
+                    await page.evaluate(() => window.scrollBy(0, 1500));
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    // First search: navigate to Amazon and search
+                    console.log('[Agent] Searching Amazon for:', action.query, '| budget:', action.budget);
+                    await page.goto('https://www.amazon.in', { waitUntil: 'networkidle2' });
+                    await page.waitForSelector("input[name='field-keywords']", { timeout: 8000 });
+                    await page.type("input[name='field-keywords']", action.query, { delay: 60 });
+                    await page.keyboard.press('Enter');
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+                    console.log('[Agent] Amazon search done, now on:', page.url());
+                    await Promise.race([
+                        page.waitForSelector('[data-component-type="s-search-result"]', { timeout: 8000 }),
+                        page.waitForSelector('.s-main-slot', { timeout: 8000 }),
+                    ]).catch(() => {});
+                    await new Promise(r => setTimeout(r, 1500));
+                    await checkLoginBreak();
+                }
+
+                // Extract all products from search results
+                const products = await page.evaluate(() => {
+                    const cards = document.querySelectorAll('[data-component-type="s-search-result"], .s-result-item[data-asin]');
+                    const results = [];
+                    cards.forEach(card => {
+                        // Price selectors
+                        const priceEl = card.querySelector('.a-price .a-offscreen') ||
+                                        card.querySelector('.a-price-whole') ||
+                                        card.querySelector('[data-a-color="price"] .a-offscreen') ||
+                                        card.querySelector('.a-color-price');
+
+                        // Link selectors
+                        const linkEl = card.querySelector('h2 a[href*="/dp/"]') ||
+                                       card.querySelector('a[href*="/dp/"]') ||
+                                       card.querySelector('a.a-link-normal[href*="/dp/"]');
+                                       
+                        const ratingEl = card.querySelector('.a-icon-alt') || 
+                                         card.querySelector('[aria-label*="out of 5 stars"]');
+
+                        if (!linkEl || !linkEl.href) return;
+
+                        let price = null;
+                        if (priceEl) {
+                            const priceText = priceEl.textContent.replace(/[₹,\s\u20B9]/g, '').trim();
+                            const parsed = parseFloat(priceText);
+                            if (!isNaN(parsed)) price = parsed;
+                        }
+
+                        let rating = 0;
+                        if (ratingEl) {
+                            const text = ratingEl.getAttribute('aria-label') || ratingEl.textContent;
+                            const m = text.match(/([\d.]+)\s*out of/);
+                            if (m) rating = parseFloat(m[1]);
+                            else { const p = parseFloat(text); if (!isNaN(p)) rating = p; }
+                        }
+
+                        results.push({
+                            url: linkEl.href,
+                            price,
+                            rating,
+                            title: card.querySelector('h2, .a-size-medium, .a-size-base-plus')?.textContent?.trim() || 'Product'
+                        });
+                    });
+                    return results;
+                });
+
+                console.log('[Agent] Products extracted:', products.length);
+
+                const budget = action.budget ? parseFloat(action.budget) : null;
+                if (budget && !isNaN(budget)) {
+                    const validProducts = products.filter(p => p.price !== null && p.price <= budget);
+                    if (validProducts.length === 0) {
+                        const priced = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price);
+                        return {
+                            success: false,
+                            budgetExceeded: true,
+                            cheapestAvailable: priced[0]?.price ?? null,
+                            cheapestTitle: priced[0]?.title?.slice(0, 50) ?? null,
+                            originalBudget: budget,
+                            error: 'No products found within \u20B9' + budget
+                        };
+                    }
+                    // Sort by price closest to budget, then by rating
+                    validProducts.sort((a, b) => b.price !== a.price ? b.price - a.price : b.rating - a.rating);
+                    console.log('[Agent] Presenting', Math.min(validProducts.length, 5), 'options to user');
+                    console.log("Skipping selection temporarily");
+                    const autoPick = validProducts[0];
+                    if (!autoPick) return { success: false, error: 'No valid products available.' };
+                    await page.goto(autoPick.url, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 2500));
+                    await checkLoginBreak();
+                } else {
+                    // No budget — auto pick first product
+                    const pick = products.find(p => p.url);
+                    if (!pick) return { success: false, error: 'No products found on this page.' };
+                    console.log('[Agent] No budget — picking first product:', pick.title.slice(0, 40));
+                    await page.goto(pick.url, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 2500));
+                    await checkLoginBreak();
+                }
+            }
+
+            // Add to cart (runs for: selectedProduct path + no-budget auto-pick path)
+            console.log('[Agent] On product page:', page.url());
+            const cartClicked = await page.evaluate(() => {
+                const addToCartInput = document.querySelector('#add-to-cart-button');
+                if (addToCartInput && addToCartInput.offsetWidth > 0) {
+                    addToCartInput.scrollIntoView({ block: 'center' });
+                    addToCartInput.click();
+                    return '#add-to-cart-button';
+                }
+                const els = Array.from(document.querySelectorAll('input[type="submit"], button'));
+                for (const el of els) {
+                    const text = (el.value || el.innerText || '').toLowerCase();
+                    if ((text.includes('add to cart') || text.includes('add to basket')) && el.offsetWidth > 0) {
+                        el.scrollIntoView({ block: 'center' });
+                        el.click();
+                        return 'fallback:' + text.slice(0, 30);
+                    }
+                }
+                return null;
+            });
+            console.log('[Agent] Add to Cart result:', cartClicked);
+            if (!cartClicked) return { success: false, error: 'Could not find Add to Cart button on product page.' };
+            await new Promise(r => setTimeout(r, 2500));
+            await checkLoginBreak();
+            return { success: true, message: 'Added to cart!' };
+        }
+
+        // ── Flipkart ──────────────────────────────────────────────────────────
+        if (action.type === 'flipkart_search') {
+            if (action.selectedProduct) {
+                console.log('[Agent] Navigating to user-selected Flipkart product:', action.selectedProduct);
+                await page.goto(action.selectedProduct, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                await new Promise(r => setTimeout(r, 2500));
+                await checkLoginBreak();
+            } else {
+                console.log('[Agent] Navigating to Flipkart search for:', action.query);
+                await page.goto('https://www.flipkart.com/search?q=' + encodeURIComponent(action.query), { waitUntil: 'networkidle2' });
+                await new Promise(r => setTimeout(r, 2500));
+                await checkLoginBreak();
+
+                // Extract products from Flipkart
+                const products = await page.evaluate(() => {
+                    const cards = document.querySelectorAll('div[data-id]');
+                    const results = [];
+                    cards.forEach(card => {
+                        const linkEl = card.querySelector('a[href*="/p/"]');
+                        if (!linkEl) return;
+
+                        // Flipkart has different layouts, try multiple selectors
+                        const priceEl = card.querySelector('div[class*="_30jeq3"]') || 
+                                        card.querySelector('div[class*="Nx9Wp0"]') ||
+                                        card.querySelector('div._30jeq3');
+                        
+                        const titleEl = card.querySelector('a[title]') || 
+                                        card.querySelector('div[class*="_4rR01T"]') ||
+                                        card.querySelector('a.IRpwTa');
+
+                        const ratingEl = card.querySelector('div[class*="_3LWZlK"]');
+
+                        let price = null;
+                        if (priceEl) {
+                            const priceText = priceEl.textContent.replace(/[₹,\s]/g, '').trim();
+                            const parsed = parseFloat(priceText);
+                            if (!isNaN(parsed)) price = parsed;
+                        }
+
+                        let rating = 0;
+                        if (ratingEl) {
+                            const parsed = parseFloat(ratingEl.textContent);
+                            if (!isNaN(parsed)) rating = parsed;
+                        }
+
+                        results.push({
+                            url: linkEl.href,
+                            price,
+                            rating,
+                            title: titleEl?.textContent?.trim() || titleEl?.getAttribute('title') || 'Product'
+                        });
+                    });
+                    return results;
+                });
+
+                console.log('[Agent] Flipkart products extracted:', products.length);
+
+                const budget = action.budget ? parseFloat(action.budget) : null;
+                if (budget && !isNaN(budget)) {
+                    const validProducts = products.filter(p => p.price !== null && p.price <= budget);
+                    if (validProducts.length === 0) {
+                        const priced = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price);
+                        return {
+                            success: false,
+                            budgetExceeded: true,
+                            cheapestAvailable: priced[0]?.price ?? null,
+                            cheapestTitle: priced[0]?.title?.slice(0, 50) ?? null,
+                            originalBudget: budget,
+                            error: 'No products found within ₹' + budget
+                        };
+                    }
+                    validProducts.sort((a, b) => b.price !== a.price ? b.price - a.price : b.rating - a.rating);
+                    console.log("Skipping selection temporarily");
+                    const autoPick = validProducts[0];
+                    if (!autoPick) return { success: false, error: 'No valid products available.' };
+                    await page.goto(autoPick.url, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 2500));
+                    await checkLoginBreak();
+                } else {
+                    const pick = products.find(p => p.url);
+                    if (!pick) return { success: false, error: 'No products found on this page.' };
+                    await page.goto(pick.url, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                    await new Promise(r => setTimeout(r, 2500));
+                    await checkLoginBreak();
+                }
+            }
+
+            // Add to cart for Flipkart
+            console.log('[Agent] On Flipkart product page:', page.url());
+            const cartClicked = await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button'));
+                const addBtn = btns.find(btn => {
+                    const text = btn.innerText.toLowerCase();
+                    return (text.includes('add to cart') || text.includes('buy now')) && btn.offsetWidth > 0;
+                });
+                if (addBtn) {
+                    addBtn.scrollIntoView({ block: 'center' });
+                    addBtn.click();
+                    return true;
+                }
+                return false;
+            });
+
+            console.log('[Agent] Flipkart Add to Cart result:', cartClicked);
+            if (!cartClicked) return { success: false, error: 'Could not find Add to Cart button on Flipkart.' };
+            
+            await new Promise(r => setTimeout(r, 2500));
+            await checkLoginBreak();
+            return { success: true, message: 'Added to cart on Flipkart!' };
+        }
+
+        // ── Food ──────────────────────────────────────────────────────────────
+        if (action.type === 'zomato_search' || action.type === 'swiggy_search') {
+            const isZomato = action.type === 'zomato_search';
+            
+            if (action.selectedProduct) {
+                console.log(`[Agent] Navigating to user-selected ${isZomato ? 'Zomato' : 'Swiggy'} restaurant:`, action.selectedProduct);
+                await page.goto(action.selectedProduct, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                await new Promise(r => setTimeout(r, 2500));
+                await checkLoginBreak();
+                await automateFoodOrder(page, checkLoginBreak);
+                return { success: true, message: `Added items to cart on ${isZomato ? 'Zomato' : 'Swiggy'}!` };
+            }
+
+            const url = isZomato
+                ? 'https://www.zomato.com/search?q=' + encodeURIComponent(action.query)
+                : 'https://www.swiggy.com/search?query=' + encodeURIComponent(action.query);
+            
+            console.log(`[Agent] Navigating to ${isZomato ? 'Zomato' : 'Swiggy'} for:`, action.query);
+            await page.goto(url, { waitUntil: 'networkidle2' });
+            await new Promise(r => setTimeout(r, 2000));
+            await checkLoginBreak();
+
+            // Extract restaurants
+            const restaurants = await page.evaluate((isZomato) => {
+                const selector = isZomato 
+                    ? 'a[href*="/restaurants/"], div[class*="jumbo-tracker"] a'
+                    : 'a[href*="/restaurants/"], div[class*="RestaurantCard"] a';
+                
+                const links = Array.from(document.querySelectorAll(selector));
+                const results = [];
+                links.forEach(link => {
+                    if (link.offsetWidth > 0 && link.offsetHeight > 0 && link.href) {
+                        const card = link.closest('div[class*="jumbo"], div[class*="RestaurantCard"]') || link.parentElement;
+                        const title = card?.innerText?.split('\n')[0] || 'Restaurant';
+                        const rating = card?.innerText?.match(/(\d+\.\d+)\s*★/)?.[1] || '0';
+                        results.push({
+                            url: link.href,
+                            title: title,
+                            rating: parseFloat(rating),
+                            price: 0 // We don't have a price for restaurants
+                        });
+                    }
+                });
+                return results;
+            }, isZomato);
+
+            console.log(`[Agent] Found ${restaurants.length} restaurants on ${isZomato ? 'Zomato' : 'Swiggy'}`);
+
+            if (restaurants.length > 0) {
+                // Return restaurants for selection
+                return { 
+                    success: false, 
+                    needsSelection: true, 
+                    options: restaurants.slice(0, 5).map(r => ({ ...r, title: `🍴 ${r.title}` }))
+                };
+            } else {
+                // If no restaurants found, attempt generic automation
+                await automateFoodOrder(page, checkLoginBreak);
+                return { success: true, message: `Attempted to add items on ${isZomato ? 'Zomato' : 'Swiggy'}.` };
+            }
+        }
+
+        // ── Other platforms ───────────────────────────────────────────────────
+        if (action.type === 'google_search') {
+            await page.goto('https://www.google.com/search?q=' + encodeURIComponent(action.query), { waitUntil: 'networkidle2' });
+            return { success: true };
+        }
+        if (action.type === 'open_url') {
+            await page.goto(action.url, { waitUntil: 'networkidle2' });
+            return { success: true };
+        }
+        if (action.type === 'ola_open') {
+            await page.goto('https://book.olacabs.com/', { waitUntil: 'networkidle2' });
+            if (action.destination) {
+                await page.waitForSelector('input[placeholder*="destination"], input[placeholder*="Where to"]', { timeout: 5000 }).catch(() => {});
+                await page.type('input[placeholder*="destination"], input[placeholder*="Where to"]', action.destination);
+            }
+            return { success: true };
+        }
+        if (action.type === 'uber_open') {
+            await page.goto('https://m.uber.com/looking', { waitUntil: 'networkidle2' });
+            return { success: true };
+        }
+        if (action.type === 'bookmyshow_search') {
+            await page.goto('https://in.bookmyshow.com/explore/movies/' + (action.city || 'chennai'), { waitUntil: 'networkidle2' });
+            return { success: true };
+        }
+
+        throw new Error('Unknown action type: ' + action.type);
 
     } catch (err) {
-        console.error('[Agent] Caught error:', err.message);
+        console.error('❌ AGENT ERROR:', err);
         if (err.message === 'LOGIN_REQUIRED') {
             (async () => {
                 const loggedIn = await waitForLoginComplete(page);
                 if (loggedIn && !page.isClosed()) {
                     console.log('[Agent] Login complete, resuming...');
-                    await resumeAgentAction(page, action, async () => {});
+                    await executeAgentAction({ ...action, page }).catch(e => console.error('Resume error:', e));
                 }
-            })().catch(e => console.error('Agent background task error:', e));
+            })().catch(e => console.error('Background task error:', e));
             return { success: false, error: 'Please log in in the browser. I will resume automatically after login.' };
         }
-        await browser.close().catch(() => {});
-        throw err;
+        if (browser) await browser.close().catch(() => {});
+        return { success: false, error: err.message };
     }
 }
+
+async function executeMinimalAgentAction(action) {
+    console.log("🚀 EXECUTE AGENT:", sanitizeActionForLog(action));
+
+    if (!action) {
+        throw new Error("Action is undefined");
+    }
+
+    if (!action.query) {
+        action.query = "";
+    }
+
+    const chromePath = getChromeExecutablePath() || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    if (!fs.existsSync(chromePath)) {
+        throw new Error(`Chrome not found at ${chromePath}`);
+    }
+
+    const browser = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: false,
+        defaultViewport: { width: 1280, height: 800 },
+        args: ["--start-maximized", "--window-size=1280,800"]
+    });
+
+    const page = await browser.newPage();
+    global.activeBrowser = browser;
+    global.activePage = page;
+
+    let productUrl = action.selectedProduct || null;
+    const budget = action.budget ? parseInt(action.budget, 10) : null;
+
+    if (!productUrl) {
+        await page.goto("https://www.amazon.in", {
+            waitUntil: "networkidle2",
+            timeout: 60000
+        });
+        console.log("➡️ Page loaded");
+
+        await page.waitForSelector("input[name='field-keywords']", { timeout: 15000 });
+        await page.click("input[name='field-keywords']", { clickCount: 3 });
+        await page.type("input[name='field-keywords']", action.query || "");
+        await page.keyboard.press("Enter");
+        await page.waitForSelector("[data-component-type='s-search-result']", { timeout: 20000 });
+        console.log("➡️ Search results loaded");
+
+        const products = await page.evaluate(() => {
+            const items = document.querySelectorAll("[data-component-type='s-search-result']");
+
+            return Array.from(items).map((item) => {
+                const link = item.querySelector("a[href*='/dp/']")?.href || null;
+                const priceText = item.querySelector('.a-price .a-offscreen')?.innerText || null;
+                const price = priceText ? parseInt(priceText.replace(/[^\d]/g, ''), 10) : null;
+                const title = item.querySelector('h2')?.innerText?.trim() || 'Product';
+
+                return { link, price, title };
+            }).filter((product) => product.link && product.price);
+        });
+
+        const validProducts = budget && !isNaN(budget)
+            ? products.filter(product => product.price <= budget)
+            : products;
+
+        if (budget && !isNaN(budget)) {
+            console.log(`[Agent] Applying budget filter: ₹${budget}`);
+        }
+
+        if (!validProducts.length) {
+            if (budget && !isNaN(budget)) {
+                const cheapestPrice = products
+                    .filter(product => product.price !== null)
+                    .sort((a, b) => a.price - b.price)[0];
+
+                console.log('[Agent] No products within budget');
+                return {
+                    success: false,
+                    budgetExceeded: true,
+                    cheapestAvailable: cheapestPrice ? cheapestPrice.price : null,
+                    cheapestTitle: cheapestPrice ? cheapestPrice.title.slice(0, 50) : null,
+                    originalBudget: budget,
+                    error: `No products found under budget`
+                };
+            }
+
+            throw new Error("No products found");
+        }
+
+        productUrl = validProducts[0].link;
+    }
+
+    if (!productUrl) {
+        throw new Error("No valid product found");
+    }
+
+    await page.goto(productUrl, { waitUntil: "networkidle2", timeout: 60000 });
+    console.log("➡️ Product opened");
+    await page.waitForSelector("body", { timeout: 20000 });
+
+    const isLoginPage = await page.evaluate(() => {
+        return document.body.innerText.includes("Sign in")
+            && !!document.querySelector("input[type='password']");
+    });
+    console.log("➡️ Login check done");
+    if (isLoginPage) {
+        console.log("🔐 LOGIN REQUIRED - waiting for user");
+        await page.waitForFunction(() => {
+            return !document.body.innerText.includes("Sign in")
+                && !!document.querySelector("#add-to-cart-button");
+        }, { timeout: 0 });
+        console.log("✅ LOGIN DETECTED - resuming");
+    }
+
+    await page.waitForSelector("#add-to-cart-button", { timeout: 20000 });
+    console.log("➡️ Clicking Add to Cart");
+    await page.click("#add-to-cart-button");
+
+    await page.waitForFunction(() => {
+        return document.body.innerText.includes("Added to Cart")
+            || document.body.innerText.includes("Proceed to checkout")
+            || document.body.innerText.includes("Added to cart");
+    }, { timeout: 20000 });
+    console.log("✅ ITEM ADDED TO CART");
+
+    console.log("➡️ Verifying cart contents");
+    await page.goto("https://www.amazon.in/gp/cart/view.html", { waitUntil: "networkidle2", timeout: 60000 });
+    console.log("➡️ Page loaded");
+
+    const cartValid = await page.evaluate(() => {
+        return !document.body.innerText.includes("Your Amazon Cart is empty");
+    });
+
+    if (!cartValid) {
+        throw new Error("Cart is still empty after add-to-cart");
+    }
+
+    console.log("✅ CART VERIFIED");
+
+    return {
+        success: true,
+        stage: "added_to_cart"
+    };
+}
+
 
 const API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 if (!API_KEY) console.error("ERROR: No Gemini API key found in .env!");
@@ -484,12 +1409,12 @@ if (!gotSingleInstanceLock) {
     process.exit(0)
 }
 
-process.on("uncaughtException", (error) => {
-    console.error("Uncaught exception in main process:", error);
+process.on("uncaughtException", (err) => {
+    console.error("🔥 UNCAUGHT ERROR:", err);
 });
 
-process.on("unhandledRejection", (error) => {
-    console.error("Unhandled rejection in main process:", error);
+process.on("unhandledRejection", (err) => {
+    console.error("🔥 UNHANDLED PROMISE:", err);
 });
 
 function isDevServerAvailable(url) {
@@ -566,7 +1491,7 @@ async function createWindow() {
         mainWindow = new BrowserWindow({
             width: 700,
             height: 580,
-            show: false,
+            show: true,
             backgroundColor: "#0b1120",
             webPreferences: {
                 preload: path.join(__dirname, "preload.js"),
@@ -579,6 +1504,14 @@ async function createWindow() {
             console.error("Buddy window failed to load:", errorCode, errorDescription);
         });
 
+        mainWindow.webContents.on("console-message", (_, level, message, line, sourceId) => {
+            console.log(`[Renderer:${level}] ${message} (${sourceId}:${line})`);
+        });
+
+        mainWindow.webContents.on("render-process-gone", (_, details) => {
+            console.error("Buddy renderer process gone:", details);
+        });
+
         const revealWindow = () => {
             if (!mainWindow || mainWindow.isDestroyed() || hasRevealedWindow) return
 
@@ -587,17 +1520,32 @@ async function createWindow() {
             showMainWindow()
         }
 
+        setTimeout(() => {
+            console.log("Buddy fallback reveal timer fired");
+            revealWindow()
+        }, 1500)
+
         mainWindow.webContents.once("did-finish-load", () => {
             console.log("Buddy window finished loading");
             console.log("Buddy window ready to show");
+            mainWindow.webContents.executeJavaScript(`
+                (() => {
+                    const root = document.getElementById('root');
+                    return {
+                        title: document.title,
+                        bodyBg: getComputedStyle(document.body).backgroundColor,
+                        bodyText: (document.body.innerText || '').slice(0, 200),
+                        rootExists: !!root,
+                        rootChildren: root ? root.childElementCount : -1,
+                        rootHtml: root ? root.innerHTML.slice(0, 500) : ''
+                    };
+                })();
+            `).then((info) => {
+                console.log("Renderer snapshot:", info);
+            }).catch((error) => {
+                console.error("Renderer snapshot failed:", error);
+            });
             revealWindow()
-        })
-
-        mainWindow.on("close", (event) => {
-            if (!app.isQuiting) {
-                event.preventDefault()
-                hideMainWindow()
-            }
         })
 
         mainWindow.on("closed", () => {
@@ -613,6 +1561,7 @@ async function createWindow() {
         })
 
         await loadRenderer()
+        revealWindow()
         return mainWindow
     } finally {
         isCreatingWindow = false
@@ -648,8 +1597,13 @@ function startSTTServer() {
 
 function createTray() {
     console.log("Creating Buddy tray");
-
-    tray = new Tray(path.join(__dirname, "tray.png"))
+    try {
+        tray = new Tray(path.join(__dirname, "tray.png"))
+    } catch (error) {
+        console.error("Buddy tray failed to initialize:", error)
+        tray = null
+        return
+    }
 
     const contextMenu = Menu.buildFromTemplate([
         {
@@ -705,33 +1659,42 @@ function handleCommand(command, event) {
     if (agentKeywords.some(w => lower.includes(w))) {
         let action = null;
         
-        if (lower.includes('zomato') || lower.includes('food') || lower.includes('eat') || ((lower.includes('order') || lower.includes('get')) && !lower.includes('amazon') && !lower.includes('flipkart') && !lower.includes('product'))) {
+        // ── A. Food ──────────────────────────────────────────────
+        if (lower.includes('zomato') || lower.includes('food') || lower.includes('eat')) {
             const q = lower.replace(/\b(open|can you|please|order|food|from|zomato|on|me|i want|get|some|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
             action = { type: 'zomato_search', query: q || 'food' };
         } else if (lower.includes('swiggy')) {
             const q = lower.replace(/\b(open|can you|please|order|food|from|swiggy|on|me|i want|get|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
             action = { type: 'swiggy_search', query: q || 'food' };
-        } else if (lower.includes('amazon') || lower.includes('buy') || lower.includes('product')) {
-            const q = lower.replace(/\b(open|can you|please|order|buy|get|from|amazon|on|me|i want|product|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
-            action = { type: 'amazon_search', query: q || 'product' };
-        } else if (lower.includes('flipkart')) {
-            const q = lower.replace(/\b(open|can you|please|order|buy|get|from|flipkart|on|me|i want|product|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
-            action = { type: 'flipkart_search', query: q || 'product' };
+        // ── B. Shopping ──────────────────────────────────────────
+        } else if (lower.includes('amazon') || lower.includes('buy') || lower.includes('product') || lower.includes('order') || lower.includes('get')) {
+            // Check for flipkart explicitly first
+            if (lower.includes('flipkart')) {
+                const q = lower.replace(/\b(open|can you|please|order|buy|get|from|flipkart|on|me|i want|product|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
+                action = { type: 'flipkart_search', query: q || 'product' };
+            } else {
+                // Default to Amazon for generic shopping
+                const q = lower.replace(/\b(open|can you|please|order|buy|get|from|amazon|on|me|i want|product|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
+                action = { type: 'amazon_search', query: q || 'product' };
+            }
+        // ── C. Cabs ──────────────────────────────────────────────
         } else if (lower.includes('ola') || (lower.includes('book') && lower.includes('cab'))) {
             const dest = lower.replace(/\b(open|can you|please|book|cab|ola|ride|to|a|an|me|from|and)\b/g, '').replace(/\s+/g, ' ').trim();
             action = { type: 'ola_open', destination: dest };
         } else if (lower.includes('uber')) {
             action = { type: 'uber_open' };
+        // ── D. Movies ────────────────────────────────────────────
         } else if (lower.includes('bookmyshow') || (lower.includes('book') && lower.includes('movie'))) {
             const movie = lower.replace(/\b(open|can you|please|book|ticket|tickets|movie|on|bookmyshow|for|me|watch|search|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
             action = { type: 'bookmyshow_search', movie: movie };
+        // ── E. Google Search ─────────────────────────────────────
         } else if (lower.includes('search') && !lower.includes('youtube')) {
             const q = lower.replace(/\b(open|can you|please|search|for|on|google|and|the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
             action = { type: 'google_search', query: q };
         }
 
         if (action) {
-            console.log("Routing to agent for approval:", command);
+            console.log("Routing to agent for approval:", command, "| Intent:", action.type);
             let platform = action.type.split('_')[0].charAt(0).toUpperCase() + action.type.split('_')[0].slice(1);
             if (action.type === 'bookmyshow_search') platform = 'BookMyShow';
 
@@ -841,12 +1804,28 @@ ipcMain.on("close-app", () => {
 });
 
 ipcMain.handle("execute-agent", async (event, action) => {
-    console.log("🔥 AGENT EXECUTION STARTED:", action);
     try {
+        console.log("🚀 EXECUTE AGENT:", sanitizeActionForLog(action));
+        if (!action) throw new Error("Action is undefined");
         const result = await executeAgentAction(action);
-        return { success: true, ...(result || {}) };
+        return result || { success: true };
+    } catch (err) {
+        console.error("❌ AGENT ERROR:", err);
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('agent-checkout-step', async (event, action) => {
+    try {
+        if (!global.activePage) {
+            return { success: false, error: 'No active browser session. Please start a new order.' };
+        }
+        action.page = global.activePage;
+        console.log('[Agent Checkout] Step:', sanitizeActionForLog(action));
+        const result = await executeAgentAction(action);
+        return result;
     } catch (error) {
-        console.error('[Agent] Error:', error.message);
+        console.error('[Agent Checkout]', error.message);
         return { success: false, error: error.message };
     }
 });
@@ -903,8 +1882,16 @@ ipcMain.handle("ask-buddy", async (event, prompt, history = []) => {
 
 app.whenReady().then(async () => {
     console.log("Electron app is ready");
-    startSTTServer()
-    createTray()
+    try {
+        startSTTServer()
+    } catch (error) {
+        console.error("STT startup failed:", error)
+    }
+    try {
+        createTray()
+    } catch (error) {
+        console.error("Tray startup failed:", error)
+    }
     await createWindow()
     registerShortcut()
 

@@ -13,7 +13,8 @@ contextBridge.exposeInMainWorld("buddyAPI", {
 })
 
 contextBridge.exposeInMainWorld("buddyAgent", {
-    execute: (action) => ipcRenderer.invoke('execute-agent', action)
+    execute: (action) => ipcRenderer.invoke('execute-agent', action),
+    checkoutStep: (action) => ipcRenderer.invoke('agent-checkout-step', action),
 })
 
 contextBridge.exposeInMainWorld("buddySTT", {

@@ -826,8 +826,610 @@ const ChatHeader = React.memo(() => (
     </div>
 ));
 
+// Rebudget card — shown when no product falls within the original budget
+
+const PaymentOptionsCard = React.memo(({ platform, onSelect, onCancel }) => {
+    const [selected, setSelected] = useState(null);
+    const [upiId, setUpiId] = useState('');
+
+    const paymentMethods = [
+        { id: 'cod', label: 'Cash on Delivery', emoji: '💵', desc: 'Pay when your order arrives' },
+        { id: 'upi', label: 'UPI', emoji: '📱', desc: 'GPay, PhonePe, Paytm' },
+        { id: 'card', label: 'Credit / Debit Card', emoji: '💳', desc: 'Visa, Mastercard, Rupay' },
+        { id: 'netbanking', label: 'Net Banking', emoji: '🏦', desc: 'All major banks supported' },
+        { id: 'amazonpay', label: 'Amazon Pay', emoji: '🛒', desc: 'Use your Amazon Pay balance' },
+    ];
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{
+                width: 20, height: 20, borderRadius: '50%',
+                background: 'rgba(99,102,241,0.12)',
+                border: '0.5px solid rgba(99,102,241,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginTop: 2
+            }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{
+                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.07))',
+                border: '0.5px solid rgba(99,102,241,0.25)',
+                overflow: 'hidden', width: '100%'
+            }}>
+                <div style={{ padding: '12px 14px' }}>
+                    <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, margin: '0 0 10px' }}>
+                        💳 Select Payment Method
+                    </p>
+
+                    {/* Payment options */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                        {paymentMethods.map(method => (
+                            <div
+                                key={method.id}
+                                onClick={() => setSelected(method.id)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+                                    background: selected === method.id ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.03)',
+                                    border: `0.5px solid ${selected === method.id ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.07)'}`,
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                <span style={{ fontSize: 16 }}>{method.emoji}</span>
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 500, margin: 0 }}>{method.label}</p>
+                                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, margin: 0 }}>{method.desc}</p>
+                                </div>
+                                <div style={{
+                                    width: 14, height: 14, borderRadius: '50%',
+                                    border: `1.5px solid ${selected === method.id ? 'rgba(99,102,241,0.8)' : 'rgba(255,255,255,0.2)'}`,
+                                    background: selected === method.id ? 'rgba(99,102,241,0.6)' : 'transparent',
+                                    transition: 'all 0.2s ease', flexShrink: 0
+                                }} />
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* UPI ID input */}
+                    {selected === 'upi' && (
+                        <div style={{ marginBottom: 10 }}>
+                            <input
+                                type="text"
+                                value={upiId}
+                                onChange={e => setUpiId(e.target.value)}
+                                onKeyDown={e => e.stopPropagation()}
+                                placeholder="Enter UPI ID (e.g. name@upi)"
+                                style={{
+                                    width: '100%', padding: '8px 10px', borderRadius: 8,
+                                    background: 'rgba(255,255,255,0.06)',
+                                    border: '0.5px solid rgba(255,255,255,0.12)',
+                                    color: 'rgba(255,255,255,0.85)', fontSize: 12,
+                                    outline: 'none', boxSizing: 'border-box'
+                                }}
+                            />
+                        </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                            onClick={() => {
+                                if (!selected) return;
+                                onSelect({ method: selected, upiId: selected === 'upi' ? upiId : undefined });
+                            }}
+                            disabled={!selected || (selected === 'upi' && !upiId)}
+                            style={{
+                                flex: 1, padding: '8px 0', borderRadius: 8,
+                                fontSize: 12, fontWeight: 500, cursor: selected ? 'pointer' : 'not-allowed',
+                                background: selected ? 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))' : 'rgba(255,255,255,0.04)',
+                                border: `0.5px solid ${selected ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                                color: selected ? 'rgba(214,221,255,0.95)' : 'rgba(255,255,255,0.3)',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            Continue →
+                        </button>
+                        <button
+                            onClick={onCancel}
+                            style={{
+                                padding: '8px 14px', borderRadius: 8, fontSize: 12,
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '0.5px solid rgba(255,255,255,0.1)',
+                                color: 'rgba(255,255,255,0.4)', cursor: 'pointer'
+                            }}
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const AgentAwaitAddressCard = React.memo(({ platform, paymentInfo, onAddressDetected, onCancel }) => {
+    const [polling, setPolling] = useState(false);
+    const [detected, setDetected] = useState(false);
+    const pollRef = useRef(null);
+
+    const startPolling = () => {
+        setPolling(true);
+        pollRef.current = setInterval(async () => {
+            const result = await window.buddyAgent.checkoutStep({
+                type: `${platform.toLowerCase()}_poll_address`
+            });
+            if (result.success && result.hasAddress) {
+                clearInterval(pollRef.current);
+                setDetected(true);
+                setPolling(false);
+                onAddressDetected();
+            }
+        }, 2000); // Poll every 2 seconds
+
+        // Safety timeout — stop polling after 3 minutes
+        setTimeout(() => {
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                setPolling(false);
+            }
+        }, 180000);
+    };
+
+    useEffect(() => {
+        return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    }, []);
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{
+                width: 20, height: 20, borderRadius: '50%',
+                background: 'rgba(234,179,8,0.12)',
+                border: '0.5px solid rgba(234,179,8,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginTop: 2
+            }}>
+                <Sparkles size={9} style={{ color: 'rgba(250,204,21,0.8)' }} />
+            </div>
+            <div style={{
+                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                background: 'linear-gradient(135deg, rgba(15,15,22,0.95), rgba(20,14,30,0.92))',
+                border: '0.5px solid rgba(234,179,8,0.2)',
+                padding: '14px', width: '100%'
+            }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 18 }}>📦</span>
+                    <div>
+                        <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: 0 }}>
+                            Delivery Address Required
+                        </p>
+                        <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: 0 }}>
+                            Buddy will detect it automatically once you add it
+                        </p>
+                    </div>
+                </div>
+
+                {/* Steps */}
+                <div style={{
+                    padding: '10px 12px', borderRadius: 8, marginBottom: 10,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '0.5px solid rgba(255,255,255,0.07)'
+                }}>
+                    {[
+                        '1️⃣ Look at the browser window that just opened',
+                        '2️⃣ Add or select your delivery address there',
+                        '3️⃣ Buddy will automatically detect when it\'s done',
+                        '4️⃣ Payment will be selected and order confirmed here'
+                    ].map((step, idx) => (
+                        <p key={idx} style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: '0 0 4px', lineHeight: 1.5 }}>{step}</p>
+                    ))}
+                </div>
+
+                {/* Polling status */}
+                {polling && (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '7px 10px', borderRadius: 8, marginBottom: 10,
+                        background: 'rgba(52,211,153,0.06)',
+                        border: '0.5px solid rgba(52,211,153,0.2)'
+                    }}>
+                        <div style={{
+                            width: 7, height: 7, borderRadius: '50%',
+                            background: 'rgba(52,211,153,0.9)',
+                            boxShadow: '0 0 6px rgba(52,211,153,0.8)',
+                            animation: 'pulse 1s ease-in-out infinite',
+                            flexShrink: 0
+                        }} />
+                        <p style={{ color: 'rgba(52,211,153,0.7)', fontSize: 11, margin: 0 }}>
+                            Watching for address... Add it in the browser now
+                        </p>
+                    </div>
+                )}
+
+                {/* Buttons */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                    {!polling && !detected && (
+                        <button
+                            onClick={startPolling}
+                            style={{
+                                flex: 1, padding: '8px 0', borderRadius: 8,
+                                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                background: 'linear-gradient(135deg, rgba(234,179,8,0.2), rgba(202,138,4,0.15))',
+                                border: '0.5px solid rgba(234,179,8,0.4)',
+                                color: 'rgba(254,240,138,0.95)',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            👁️ Watch for Address
+                        </button>
+                    )}
+                    <button
+                        onClick={onCancel}
+                        style={{
+                            padding: '8px 14px', borderRadius: 8, fontSize: 12,
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '0.5px solid rgba(255,255,255,0.1)',
+                            color: 'rgba(255,255,255,0.4)', cursor: 'pointer'
+                        }}
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const AgentAwaitLoginCard = React.memo(({ platform, paymentInfo, onLoginDetected, onCancel }) => {
+    const [polling, setPolling] = useState(false);
+    const [detected, setDetected] = useState(false);
+    const pollRef = useRef(null);
+
+    const startPolling = () => {
+        setPolling(true);
+        pollRef.current = setInterval(async () => {
+            const result = await window.buddyAgent.checkoutStep({
+                type: `${platform.toLowerCase()}_poll_login`
+            });
+            if (result.success && result.isLoggedIn) {
+                clearInterval(pollRef.current);
+                setDetected(true);
+                setPolling(false);
+                onLoginDetected();
+            }
+        }, 2000); // Poll every 2 seconds
+
+        // Safety timeout — stop polling after 3 minutes
+        setTimeout(() => {
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                setPolling(false);
+            }
+        }, 180000);
+    };
+
+    useEffect(() => {
+        return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    }, []);
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{
+                width: 20, height: 20, borderRadius: '50%',
+                background: 'rgba(99,102,241,0.12)',
+                border: '0.5px solid rgba(99,102,241,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginTop: 2
+            }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{
+                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                background: 'linear-gradient(135deg, rgba(15,15,22,0.95), rgba(20,14,30,0.92))',
+                border: '0.5px solid rgba(99,102,241,0.2)',
+                padding: '14px', width: '100%'
+            }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 18 }}>🔐</span>
+                    <div>
+                        <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: 0 }}>
+                            Sign in to {platform}
+                        </p>
+                        <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: 0 }}>
+                            Log in directly in the browser — Buddy will detect it automatically
+                        </p>
+                    </div>
+                </div>
+
+                {/* Steps */}
+                <div style={{
+                    padding: '10px 12px', borderRadius: 8, marginBottom: 10,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '0.5px solid rgba(255,255,255,0.07)'
+                }}>
+                    {[
+                        '1️⃣ Look at the browser window that just opened',
+                        '2️⃣ Enter your login credentials there',
+                        '3️⃣ Buddy will automatically detect when you\'re logged in',
+                        '4️⃣ Payment will be selected and order confirmed here'
+                    ].map((step, idx) => (
+                        <p key={idx} style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: '0 0 4px', lineHeight: 1.5 }}>{step}</p>
+                    ))}
+                </div>
+
+                {/* Polling status */}
+                {polling && (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '7px 10px', borderRadius: 8, marginBottom: 10,
+                        background: 'rgba(52,211,153,0.06)',
+                        border: '0.5px solid rgba(52,211,153,0.2)'
+                    }}>
+                        <div style={{
+                            width: 7, height: 7, borderRadius: '50%',
+                            background: 'rgba(52,211,153,0.9)',
+                            boxShadow: '0 0 6px rgba(52,211,153,0.8)',
+                            animation: 'pulse 1s ease-in-out infinite',
+                            flexShrink: 0
+                        }} />
+                        <p style={{ color: 'rgba(52,211,153,0.7)', fontSize: 11, margin: 0 }}>
+                            Watching for login... Sign in to the browser now
+                        </p>
+                    </div>
+                )}
+
+                {/* Buttons */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                    {!polling && !detected && (
+                        <button
+                            onClick={startPolling}
+                            style={{
+                                flex: 1, padding: '8px 0', borderRadius: 8,
+                                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))',
+                                border: '0.5px solid rgba(99,102,241,0.4)',
+                                color: 'rgba(214,221,255,0.95)',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            👁️ Watch for Login
+                        </button>
+                    )}
+                    <button
+                        onClick={onCancel}
+                        style={{
+                            padding: '8px 14px', borderRadius: 8, fontSize: 12,
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '0.5px solid rgba(255,255,255,0.1)',
+                            color: 'rgba(255,255,255,0.4)', cursor: 'pointer'
+                        }}
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const LeftSidebar = React.memo(({ sessions, activeSession, onSelect, onNew }) => (
+    <div style={{
+        position: 'fixed', left: 20, top: '50%', transform: 'translateY(-50%)',
+        width: 160, zIndex: 60,
+        background: 'rgba(15,15,20,0.75)',
+        backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+        border: '0.5px solid rgba(255,255,255,0.09)',
+        borderRadius: 18, padding: 12,
+        boxShadow: '0 24px 56px rgba(0,0,0,0.5)'
+    }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: '0.06em' }}>HISTORY</span>
+            <button onClick={onNew} style={{
+                background: 'rgba(99,102,241,0.15)', border: '0.5px solid rgba(99,102,241,0.3)',
+                borderRadius: 6, padding: '2px 8px', color: 'rgba(139,92,246,0.9)',
+                fontSize: 11, cursor: 'pointer'
+            }}>+ New</button>
+        </div>
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            {sessions.length === 0 && (
+                <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, textAlign: 'center', margin: '20px 0' }}>No history yet</p>
+            )}
+            {sessions.map((s, i) => (
+                <div
+                    key={i}
+                    onClick={() => onSelect(s)}
+                    style={{
+                        padding: '8px 10px', borderRadius: 8, marginBottom: 4,
+                        cursor: 'pointer',
+                        background: activeSession?.id === s.id ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
+                        border: `0.5px solid ${activeSession?.id === s.id ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    <p style={{
+                        color: 'rgba(255,255,255,0.7)', fontSize: 11, margin: 0, fontWeight: 500,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                    }}>
+                        {s.title}
+                    </p>
+                    <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, margin: '2px 0 0' }}>{s.time}</p>
+                </div>
+            ))}
+        </div>
+    </div>
+));
+
+const AgentSelectCard = React.memo(({ action, options, onSelect, onLoadMore }) => {
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{
+                width: 20, height: 20, borderRadius: '50%',
+                background: 'rgba(99,102,241,0.12)',
+                border: '0.5px solid rgba(99,102,241,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginTop: 2
+            }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{
+                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                background: 'linear-gradient(135deg, rgba(15,15,22,0.95), rgba(20,14,30,0.92))',
+                border: '0.5px solid rgba(99,102,241,0.2)',
+                padding: '12px', width: '100%'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 16 }}>📋</span>
+                    <div>
+                        <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: 0 }}>
+                            Multiple options found
+                        </p>
+                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, margin: 0 }}>
+                            Select an item within your ₹{action.budget} budget
+                        </p>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    {options.map((opt, i) => (
+                        <div key={i} style={{
+                            padding: '10px', borderRadius: 8,
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '0.5px solid rgba(255,255,255,0.06)',
+                            display: 'flex', flexDirection: 'column', gap: 6
+                        }}>
+                            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, margin: 0, lineHeight: 1.3 }}>
+                                {opt.title.length > 60 ? opt.title.slice(0, 57) + '...' : opt.title}
+                            </p>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ color: 'rgba(96,165,250,0.9)', fontSize: 14, fontWeight: 600 }}>
+                                        ₹{opt.price}
+                                    </span>
+                                    {opt.rating > 0 && (
+                                        <span style={{ color: 'rgba(250,204,21,0.9)', fontSize: 11, fontWeight: 500 }}>
+                                            ⭐ {opt.rating}
+                                        </span>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => onSelect(opt)}
+                                    style={{
+                                        padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                                        background: 'rgba(59,130,246,0.15)',
+                                        border: '0.5px solid rgba(59,130,246,0.3)',
+                                        color: 'rgba(147,197,253,0.9)', cursor: 'pointer',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    Select
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <button
+                    onClick={onLoadMore}
+                    style={{
+                        width: '100%', padding: '8px 0', borderRadius: 8, fontSize: 12,
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '0.5px solid rgba(255,255,255,0.1)',
+                        color: 'rgba(255,255,255,0.5)', cursor: 'pointer'
+                    }}
+                >
+                    ⬇️ Show more options
+                </button>
+            </div>
+        </div>
+    );
+});
+
+const AgentRebudgetCard = React.memo(({ action, originalBudget, cheapestAvailable, cheapestTitle, onSubmit }) => {
+    const [newBudget, setNewBudget] = useState('');
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{
+                width: 20, height: 20, borderRadius: '50%',
+                background: 'rgba(99,102,241,0.12)',
+                border: '0.5px solid rgba(99,102,241,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginTop: 2
+            }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{
+                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(99,102,241,0.06))',
+                border: '0.5px solid rgba(239,68,68,0.25)',
+                overflow: 'hidden'
+            }}>
+                <div style={{ padding: '12px 14px' }}>
+                    {/* Warning header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <span style={{ fontSize: 16 }}>⚠️</span>
+                        <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: 500, margin: 0 }}>
+                            No items found within ₹{originalBudget}
+                        </p>
+                    </div>
+
+                    {/* Cheapest available */}
+                    {cheapestAvailable && (
+                        <div style={{
+                            padding: '8px 10px', borderRadius: 8, marginBottom: 10,
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '0.5px solid rgba(255,255,255,0.07)'
+                        }}>
+                            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, margin: '0 0 3px', letterSpacing: '0.05em' }}>CHEAPEST AVAILABLE</p>
+                            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: '0 0 2px' }}>{cheapestTitle}</p>
+                            <p style={{ color: 'rgba(96,165,250,0.9)', fontSize: 13, fontWeight: 600, margin: 0 }}>₹{cheapestAvailable}</p>
+                        </div>
+                    )}
+
+                    {/* New budget input */}
+                    <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 6px' }}>
+                        Enter a new budget to try again:
+                    </p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                            type="number"
+                            value={newBudget}
+                            onChange={e => setNewBudget(e.target.value)}
+                            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter' && newBudget) onSubmit(newBudget); }}
+                            placeholder={cheapestAvailable ? `e.g. ${cheapestAvailable}` : 'Enter budget'}
+                            style={{
+                                flex: 1, padding: '7px 10px', borderRadius: 8,
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '0.5px solid rgba(255,255,255,0.12)',
+                                color: 'rgba(255,255,255,0.85)', fontSize: 12,
+                                outline: 'none'
+                            }}
+                        />
+                        <button
+                            onClick={() => { if (newBudget) onSubmit(newBudget); }}
+                            disabled={!newBudget}
+                            style={{
+                                padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                                background: newBudget ? 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))' : 'rgba(255,255,255,0.04)',
+                                border: `0.5px solid ${newBudget ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                                color: newBudget ? 'rgba(214,221,255,0.95)' : 'rgba(255,255,255,0.3)',
+                                cursor: newBudget ? 'pointer' : 'not-allowed',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
 // Separate component so it has its own state — cannot use useState inside useMemo
-const AgentConfirmCard = ({ msg, index, setMessages, setPendingAgentAction }) => {
+const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAction }) => {
     const [budget, setBudget] = useState('');
     return (
         <div className="message-enter" style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
@@ -872,18 +1474,65 @@ const AgentConfirmCard = ({ msg, index, setMessages, setPendingAgentAction }) =>
                     <div style={{ display: 'flex', gap: 6 }}>
                         <button
                             onClick={async () => {
-                                const budgetNum = budget ? parseInt(budget) : null;
-                                const actionWithBudget = { ...msg.action, budget: budgetNum };
+                                const budgetValue = budget;
+                                const actionWithBudget = {
+                                    ...msg.action,
+                                    budget: budgetValue && budgetValue.trim() !== '' ? parseFloat(budgetValue.trim()) : null
+                                };
+                                console.log('[Frontend] Executing with budget:', actionWithBudget.budget);
+
+                                if (actionWithBudget.budget !== null && actionWithBudget.budget < 100) {
+                                    // Show warning but still proceed
+                                    console.warn('[Frontend] Budget seems very low:', actionWithBudget.budget);
+                                }
+
                                 setPendingAgentAction(null);
-                                setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'agent-done', status: 'running' } : m));
+                                setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'agent-done', status: 'running', text: '🚀 Launching automation...' } : m));
                                 const result = await window.buddyAgent.execute(actionWithBudget);
-                                setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                    ...m,
-                                    role: 'buddy',
-                                    text: result?.success
-                                        ? `✅ Done! Opened ${msg.action.platform}${budgetNum ? ` within ₹${budgetNum}` : ''}. Continue from the browser!`
-                                        : `⚠️ ${result?.error || 'Something went wrong'}`
-                                } : m));
+                                console.log('[Frontend] Agent result:', result);
+
+                                if (result.success) {
+                                    setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                        role: 'buddy',
+                                        text: `✅ Added to cart! ${result.productTitle ? `"${result.productTitle}"` : ''} ${result.productPrice ? `at ₹${result.productPrice}` : ''}\n\nProceeding to checkout...`,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                    setTimeout(() => {
+                                        setMessages(prev => [...prev, {
+                                            role: 'agent-payment',
+                                            platform: msg.action.platform,
+                                            timestamp: Date.now()
+                                        }]);
+                                    }, 800);
+                                } else if (result.budgetExceeded) {
+                                    setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                        role: 'agent-rebudget',
+                                        action: msg.action,
+                                        originalBudget: result.originalBudget,
+                                        cheapestAvailable: result.cheapestAvailable,
+                                        cheapestTitle: result.cheapestTitle,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                } else if (!result.success && result.needsSelection) {
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'agent-select',
+                                        action: actionWithBudget,
+                                        options: result.options,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                } else if (!result.success && result.loginRequired) {
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: `⚠️ ${result.message || 'Please login to Amazon to continue.'}`,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                } else {
+                                    setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                        role: 'buddy',
+                                        text: `⚠️ ${result.error || 'Something went wrong'}`,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                }
                             }}
                             style={{
                                 flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 500,
@@ -923,11 +1572,370 @@ const AgentConfirmCard = ({ msg, index, setMessages, setPendingAgentAction }) =>
 };
 
 const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction }) => {
-    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(true);
     const messageList = useMemo(() => messages.map((msg, index) => {
         // Agent confirmation card
         if (msg.role === 'agent-confirm') {
-            return <AgentConfirmCard key={index} msg={msg} index={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
+            return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
+        }
+
+        // Agent rebudget card — shown when no item within original budget
+        if (msg.role === 'agent-rebudget') {
+            return (
+                <AgentRebudgetCard
+                    key={index}
+                    action={msg.action}
+                    originalBudget={msg.originalBudget}
+                    cheapestAvailable={msg.cheapestAvailable}
+                    cheapestTitle={msg.cheapestTitle}
+                    onSubmit={async (newBudget) => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: `🔄 Trying again with budget ₹${newBudget}...`,
+                            timestamp: m.timestamp
+                        } : m));
+                        const result = await window.buddyAgent.execute({
+                            ...msg.action,
+                            budget: parseFloat(newBudget)
+                        });
+                        if (!result.success && result.budgetExceeded) {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'agent-rebudget',
+                                action: msg.action,
+                                originalBudget: result.originalBudget,
+                                cheapestAvailable: result.cheapestAvailable,
+                                cheapestTitle: result.cheapestTitle,
+                                timestamp: m.timestamp
+                            } : m));
+                        } else if (!result.success && result.needsSelection) {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'agent-select',
+                                action: { ...msg.action, budget: parseFloat(newBudget) },
+                                options: result.options,
+                                timestamp: m.timestamp
+                            } : m));
+                        } else {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'buddy',
+                                text: result.success
+                                    ? `✅ Done! Found an item within ₹${newBudget} and added to cart!`
+                                    : `⚠️ ${result.error}`,
+                                timestamp: m.timestamp
+                            } : m));
+                            
+                            if (result.success) {
+                                setTimeout(() => {
+                                    setMessages(prev => [...prev, {
+                                        role: 'agent-payment',
+                                        platform: msg.action.platform,
+                                        timestamp: Date.now()
+                                    }]);
+                                }, 500);
+                            }
+                        }
+                    }}
+                />
+            );
+        }
+
+        // Agent select card — shown when multiple valid choices exist
+        if (msg.role === 'agent-select') {
+            return (
+                <AgentSelectCard
+                    key={index}
+                    action={msg.action}
+                    options={msg.options}
+                    onSelect={async (option) => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: `🔄 Selecting ${option.title.slice(0, 30)}... and adding to cart...`,
+                            timestamp: m.timestamp
+                        } : m));
+                        
+                        const result = await window.buddyAgent.execute({
+                            ...msg.action,
+                            selectedProduct: option.url
+                        });
+                        
+                        if (!result.success && result.loginRequired) {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'buddy',
+                                text: `⚠️ ${result.message || 'Please login to Amazon to continue.'}`,
+                                timestamp: m.timestamp
+                            } : m));
+                        } else if (result.success) {
+                            const successText = result.stage === 'checkout_started'
+                                ? `✅ Added to cart and started checkout. Choose a payment option to continue.`
+                                : `✅ Added to cart and verified the cart contents.`;
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'buddy',
+                                text: successText,
+                                timestamp: m.timestamp
+                            } : m));
+                            
+                            if (result.stage === 'checkout_started') {
+                                setTimeout(() => {
+                                    setMessages(prev => [...prev, {
+                                        role: 'agent-payment',
+                                        platform: msg.action.platform,
+                                        timestamp: Date.now()
+                                    }]);
+                                }, 500);
+                            }
+                        } else {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'buddy',
+                                text: `⚠️ Failed to select: ${result.error}`,
+                                timestamp: m.timestamp
+                            } : m));
+                        }
+                    }}
+                    onLoadMore={async () => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: `🔄 Loading more options...`,
+                            timestamp: m.timestamp
+                        } : m));
+                        
+                        const result = await window.buddyAgent.execute({
+                            ...msg.action,
+                            loadMoreOptions: true
+                        });
+                        
+                        if (!result.success && result.needsSelection) {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'agent-select',
+                                action: msg.action,
+                                options: result.options,
+                                timestamp: m.timestamp
+                            } : m));
+                        } else if (!result.success && result.budgetExceeded) {
+                             setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'agent-rebudget',
+                                action: msg.action,
+                                originalBudget: result.originalBudget,
+                                cheapestAvailable: result.cheapestAvailable,
+                                cheapestTitle: result.cheapestTitle,
+                                timestamp: m.timestamp
+                            } : m));
+                        } else if (result.success) {
+                            setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'buddy',
+                                text: `✅ Updated the cart flow and opened checkout.`,
+                                timestamp: m.timestamp
+                            } : m));
+
+                            // Trigger payment selection for shopping/food
+                            setTimeout(() => {
+                                setMessages(prev => [...prev, {
+                                    role: 'agent-payment',
+                                    platform: msg.action.platform,
+                                    timestamp: Date.now()
+                                }]);
+                            }, 500);
+                        } else {
+                             setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                role: 'buddy',
+                                text: `⚠️ ${result?.error || 'Failed'}`,
+                                timestamp: m.timestamp
+                            } : m));
+                        }
+                    }}
+                />
+            );
+        }
+
+        if (msg.role === 'agent-payment') {
+            return (
+                <PaymentOptionsCard
+                    key={index}
+                    platform={msg.platform}
+                    onSelect={async (paymentInfo) => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: `💳 Payment: ${paymentInfo.method.toUpperCase()} selected\n\n🔄 Navigating to checkout in your browser...`,
+                            timestamp: m.timestamp
+                        } : m));
+
+                        const checkoutResult = await window.buddyAgent.checkoutStep({
+                            type: `${msg.platform.toLowerCase()}_goto_checkout`
+                        });
+
+                        if (!checkoutResult.success) {
+                            setMessages(prev => [...prev, {
+                                role: 'buddy',
+                                text: `⚠️ Could not reach checkout: ${checkoutResult.error}\n\nPlease complete checkout manually in the browser.`,
+                                timestamp: Date.now()
+                            }]);
+                            return;
+                        }
+
+                        if (checkoutResult.needsLogin) {
+                            setMessages(prev => [...prev, {
+                                role: 'agent-await-login',
+                                platform: msg.platform,
+                                paymentInfo,
+                                timestamp: Date.now()
+                            }]);
+                        } else {
+                            const paymentResult = await window.buddyAgent.checkoutStep({
+                                type: `${msg.platform.toLowerCase()}_select_payment`,
+                                method: paymentInfo.method,
+                                upiId: paymentInfo.upiId
+                            });
+
+                            if (!paymentResult.success) {
+                                setMessages(prev => [...prev, {
+                                    role: 'buddy',
+                                    text: `âš ï¸ Payment selection issue: ${paymentResult.error}\n\nPlease complete payment manually in the browser.`,
+                                    timestamp: Date.now()
+                                }]);
+                                return;
+                            }
+
+                            setMessages(prev => [...prev, {
+                                role: 'agent-place-order',
+                                platform: msg.platform,
+                                paymentMethod: paymentInfo.method,
+                                timestamp: Date.now()
+                            }]);
+                        }
+                    }}
+                    onCancel={() => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: '❌ Checkout cancelled. Your cart is saved!',
+                            timestamp: m.timestamp
+                        } : m));
+                    }}
+                />
+            );
+        }
+
+        if (msg.role === 'agent-await-login') {
+            return (
+                <AgentAwaitLoginCard
+                    key={index}
+                    platform={msg.platform}
+                    paymentInfo={msg.paymentInfo}
+                    onLoginDetected={async () => {
+                        // Replace card with processing message
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: '✅ Login detected! Selecting your payment method...',
+                            timestamp: m.timestamp
+                        } : m));
+
+                        // Select payment method
+                        const paymentResult = await window.buddyAgent.checkoutStep({
+                            type: `${msg.platform.toLowerCase()}_select_payment`,
+                            method: msg.paymentInfo.method,
+                            upiId: msg.paymentInfo.upiId
+                        });
+
+                        if (!paymentResult.success) {
+                            setMessages(prev => [...prev, {
+                                role: 'buddy',
+                                text: `⚠️ Could not select payment automatically: ${paymentResult.error || 'Unknown error'}\n\nPlease continue in the browser.`,
+                                timestamp: Date.now()
+                            }]);
+                            return;
+                        }
+
+                        // Show place order card
+                        setMessages(prev => [...prev, {
+                            role: 'agent-place-order',
+                            platform: msg.platform,
+                            paymentMethod: msg.paymentInfo.method,
+                            timestamp: Date.now()
+                        }]);
+                    }}
+                    onCancel={() => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: '❌ Cancelled. Complete the order manually in the browser.',
+                            timestamp: m.timestamp
+                        } : m));
+                    }}
+                />
+            );
+        }
+
+        if (msg.role === 'agent-place-order') {
+            return (
+                <div key={index} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+                    <div style={{
+                        width: 20, height: 20, borderRadius: '50%',
+                        background: 'rgba(52,211,153,0.12)',
+                        border: '0.5px solid rgba(52,211,153,0.3)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0, marginTop: 2
+                    }}>
+                        <Sparkles size={9} style={{ color: 'rgba(52,211,153,0.8)' }} />
+                    </div>
+                    <div style={{
+                        maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                        background: 'linear-gradient(135deg, rgba(52,211,153,0.08), rgba(99,102,241,0.06))',
+                        border: '0.5px solid rgba(52,211,153,0.25)',
+                        padding: '12px 14px'
+                    }}>
+                        <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>
+                            🎉 Ready to place order!
+                        </p>
+                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 10px' }}>
+                            Payment: {msg.paymentMethod?.toUpperCase()} · Platform: {msg.platform}
+                        </p>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                                onClick={async () => {
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: '🛒 Placing your order...',
+                                        timestamp: m.timestamp
+                                    } : m));
+                                    const result = await window.buddyAgent.checkoutStep({
+                                        type: `${msg.platform.toLowerCase()}_place_order`
+                                    });
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: result.success
+                                            ? `🎉 ${result.message || 'Order placed successfully!'}\n\nCheck your email for confirmation!`
+                                            : `⚠️ ${result.error || 'Could not place order automatically. Please click Place Order in the browser.'}`,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                }}
+                                style={{
+                                    flex: 1, padding: '8px 0', borderRadius: 8,
+                                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                    background: 'linear-gradient(135deg, rgba(52,211,153,0.25), rgba(59,130,246,0.2))',
+                                    border: '0.5px solid rgba(52,211,153,0.4)',
+                                    color: 'rgba(200,255,230,0.95)',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                🛒 Place Order Now
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: '✅ Everything is set up! Complete the order manually in the browser.',
+                                        timestamp: m.timestamp
+                                    } : m));
+                                }}
+                                style={{
+                                    padding: '8px 14px', borderRadius: 8, fontSize: 12,
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '0.5px solid rgba(255,255,255,0.1)',
+                                    color: 'rgba(255,255,255,0.4)', cursor: 'pointer'
+                                }}
+                            >
+                                Do it myself
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         const isUser = msg.role === 'user';
@@ -1003,7 +2011,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                 </div>
             </div>
         );
-    }), [messages]);
+    }), [messages, setMessages, setPendingAgentAction, setChatOpen, setSidebarVisible]);
 
     return (
         <div
@@ -1138,7 +2146,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
     );
 });
 
-const InputBar = React.memo(({ chatOpen, isLoading, isListening, sttOnline, onEscape, onSubmit, inputRef }) => (
+const InputBar = React.memo(({ chatOpen, isLoading, isListening, sttOnline, onEscape, onSubmit, onMicClick, inputRef }) => (
     <div
         className="buddy-input-bar"
         style={{
@@ -1177,15 +2185,7 @@ const InputBar = React.memo(({ chatOpen, isLoading, isListening, sttOnline, onEs
             sttOnline={sttOnline}
             onEscape={onEscape}
             onSubmit={onSubmit}
-            onMicClick={() => {
-                setMessages(prev => [...prev, {
-                    role: 'buddy',
-                    text: '⚠️ Voice recognition is offline. Make sure the Python STT server is running.',
-                    timestamp: Date.now()
-                }])
-                setChatOpen(true)
-                setSidebarVisible(false)
-            }}
+            onMicClick={onMicClick}
         />
     </div>
 ));
@@ -1338,13 +2338,15 @@ const parseAgentCommand = (text) => {
 
 const Spotlight = React.memo(() => {
     const [messages, setMessages] = useState(() => getHistory());
+    const [chatSessions, setChatSessions] = useState([]);
+    const [activeSession, setActiveSession] = useState(null);
     const [pendingAgentAction, setPendingAgentAction] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isTyping, setIsTyping] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     const [sidebarVisible, setSidebarVisible] = useState(true);
-    const [showSplash, setShowSplash] = useState(true);
-    const [mainVisible, setMainVisible] = useState(false);
+    const [showSplash, setShowSplash] = useState(false);
+    const [mainVisible, setMainVisible] = useState(true);
     const [isListening, setIsListening] = useState(false);
     const [sttOnline, setSttOnline] = useState(false);
     const inputRef = useRef(null);
@@ -1442,6 +2444,13 @@ const Spotlight = React.memo(() => {
 
         const lower = finalText.toLowerCase().trim();
         const userMsg = { role: 'user', text: finalText, timestamp: Date.now() };
+        if (messages.filter(m => m.role === 'user').length === 0) {
+            setActiveSession({
+                id: Date.now(),
+                title: finalText.slice(0, 25),
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+        }
 
         // ── 1. Math ──────────────────────────────────────────────────────────────
         const mathResult = evaluateMath(finalText);
@@ -1593,6 +2602,16 @@ const Spotlight = React.memo(() => {
         }
     }, [handleSubmit])
 
+    const handleMicClick = useCallback(() => {
+        setMessages(prev => [...prev, {
+            role: 'buddy',
+            text: '⚠️ Voice recognition is offline. Make sure the Python STT server is running.',
+            timestamp: Date.now()
+        }]);
+        setChatOpen(true);
+        setSidebarVisible(false);
+    }, []);
+
     const spotlightStyle = useMemo(() => ({
         background: 'rgba(0,0,0,0.45)',
         backdropFilter: 'blur(20px)',
@@ -1694,6 +2713,26 @@ const Spotlight = React.memo(() => {
             `}</style>
             {showSplash && <WelcomeSplash onDone={handleSplashDone} />}
             <Sidebar visible={sidebarVisible && mainVisible} />
+            <LeftSidebar
+                sessions={chatSessions}
+                activeSession={activeSession}
+                onSelect={(s) => { setMessages(s.messages); setActiveSession(s); setChatOpen(true); }}
+                onNew={() => {
+                    if (messages.length > 0) {
+                        const session = {
+                            id: Date.now(),
+                            title: messages.find(m => m.role === 'user')?.text?.slice(0, 25) || 'Chat',
+                            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            messages: [...messages]
+                        };
+                        setChatSessions(prev => [session, ...prev].slice(0, 20));
+                    }
+                    setMessages([]);
+                    setChatOpen(false);
+                    setActiveSession(null);
+                    setSidebarVisible(true);
+                }}
+            />
 
             <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4" style={spotlightStyle}>
                 {/* Ambient background orbs */}
@@ -1746,7 +2785,16 @@ const Spotlight = React.memo(() => {
                                 </div>
                             </div>
                         )}
-                        <InputBar chatOpen={chatOpen} inputRef={inputRef} isLoading={isLoading} isListening={isListening} sttOnline={sttOnline} onEscape={handleEscape} onSubmit={handleSubmit} />
+                        <InputBar 
+                            chatOpen={chatOpen} 
+                            inputRef={inputRef} 
+                            isLoading={isLoading} 
+                            isListening={isListening} 
+                            sttOnline={sttOnline} 
+                            onEscape={handleEscape} 
+                            onSubmit={handleSubmit} 
+                            onMicClick={handleMicClick} 
+                        />
 
                         <p className="text-center mt-3" style={{ color: 'rgba(255,255,255,0.15)', fontSize: 12, letterSpacing: '0.02em' }}>
                             Press <kbd style={{ fontFamily: 'monospace' }}>Esc</kbd> to close chat | <kbd style={{ fontFamily: 'monospace' }}>Ctrl+Alt+B</kbd> to toggle

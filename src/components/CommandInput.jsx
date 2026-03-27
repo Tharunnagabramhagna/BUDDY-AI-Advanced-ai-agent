@@ -1,21 +1,29 @@
 import { Mic, Send } from 'lucide-react';
-import React, { forwardRef, memo, useCallback, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 const CommandInput = memo(forwardRef(function CommandInput({ isLoading, isListening, sttOnline, onEscape, onSubmit, onMicClick }, ref) {
     const [command, setCommand] = useState('');
+    const commandRef = useRef(command);
     const innerInputRef = useRef(null);
+
+    useEffect(() => {
+        commandRef.current = command;
+    }, [command]);
 
     const handleChange = useCallback((event) => {
         setCommand(event.target.value);
     }, []);
 
     const handleSubmit = useCallback(async () => {
-        const submitted = await onSubmit(command);
+        const currentCommand = commandRef.current;
+        if (!currentCommand.trim()) return;
+        
+        const submitted = await onSubmit(currentCommand);
 
         if (submitted) {
             setCommand('');
         }
-    }, [command, onSubmit]);
+    }, [onSubmit]);
 
     const handleKeyDown = useCallback((event) => {
         if (event.key === 'Enter') {
