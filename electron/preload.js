@@ -23,3 +23,9 @@ contextBridge.exposeInMainWorld("buddySTT", {
     notifyOpen: () => ipcRenderer.invoke("stt-app-open"),
     notifyClose: () => ipcRenderer.invoke("stt-app-close"),
 })
+
+contextBridge.exposeInMainWorld("api", {
+    send: (channel, data) => ipcRenderer.send(channel, data),
+    on: (channel, func) => ipcRenderer.on(channel, (event, ...args) => func(...args)),
+    removeListener: (channel, func) => ipcRenderer.removeListener(channel, func)
+})

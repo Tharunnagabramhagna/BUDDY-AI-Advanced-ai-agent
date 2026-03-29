@@ -750,51 +750,32 @@ const WelcomeSplash = React.memo(({ onDone }) => {
             transition: 'opacity 0.7s ease, transform 0.7s ease',
             opacity: phase === 'dissolve' ? 0 : 1,
             transform: phase === 'dissolve' ? 'scale(0.98)' : 'scale(1)',
+            pointerEvents: phase === 'dissolve' ? 'none' : 'auto'
         }}>
             <div style={{
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', gap: 20,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
                 transition: 'opacity 0.5s ease, transform 0.5s ease',
                 opacity: phase === 'enter' ? 0 : 1,
-                transform: phase === 'enter' ? 'translateY(12px)' : 'translateY(0)',
+                transform: phase === 'enter' ? 'translateY(12px)' : 'translateY(0)'
             }}>
-                {/* Clean logo */}
                 <div style={{ position: 'relative', width: 72, height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(99,102,241,0.3)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite' }} />
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(139,92,246,0.2)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite', animationDelay: '0.8s' }} />
                     <div style={{
-                        position: 'absolute', inset: 0, borderRadius: '50%',
-                        border: '1px solid rgba(99,102,241,0.3)',
-                        animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite'
-                    }} />
-                    <div style={{
-                        width: 56, height: 56, borderRadius: '50%',
+                        width: 52, height: 52, borderRadius: '50%',
                         background: 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.15))',
                         border: '1px solid rgba(139,92,246,0.4)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 0 30px rgba(99,102,241,0.2)'
+                        boxShadow: '0 0 30px rgba(99,102,241,0.25)'
                     }}>
                         <Sparkles size={22} style={{ color: 'rgba(167,139,250,0.9)' }} />
                     </div>
                 </div>
-
-                {/* Clean text */}
                 <div style={{ textAlign: 'center' }}>
-                    <h1 style={{
-                        color: 'rgba(255,255,255,0.92)', fontSize: 28,
-                        fontWeight: 600, letterSpacing: '-0.03em', margin: 0
-                    }}>Buddy</h1>
-                    <p style={{
-                        color: 'rgba(255,255,255,0.3)', fontSize: 13,
-                        marginTop: 6, fontWeight: 400
-                    }}>Your personal AI assistant</p>
+                    <h1 style={{ color: 'rgba(255,255,255,0.92)', fontSize: 28, fontWeight: 600, letterSpacing: '-0.03em', margin: 0 }}>Buddy</h1>
+                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, marginTop: 6, fontWeight: 400 }}>Your personal AI assistant</p>
                 </div>
-
-                {/* Status row */}
-                <div style={{
-                    display: 'flex', alignItems: 'center', gap: 16,
-                    padding: '8px 20px', borderRadius: 100,
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '0.5px solid rgba(255,255,255,0.08)'
-                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '8px 20px', borderRadius: 100, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.08)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.8)' }} />
                         <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Ready</span>
@@ -1081,7 +1062,7 @@ const AgentAwaitAddressCard = React.memo(({ platform, paymentInfo, onAddressDete
     );
 });
 
-const AgentAwaitLoginCard = React.memo(({ platform, paymentInfo, onLoginDetected, onCancel }) => {
+const AgentAwaitLoginCard = React.memo(({ platform, isFirstLogin = false, paymentInfo, onLoginDetected, onCancel }) => {
     const [polling, setPolling] = useState(false);
     const [detected, setDetected] = useState(false);
     const pollRef = useRef(null);
@@ -1135,10 +1116,10 @@ const AgentAwaitLoginCard = React.memo(({ platform, paymentInfo, onLoginDetected
                     <span style={{ fontSize: 18 }}>🔐</span>
                     <div>
                         <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: 0 }}>
-                            Sign in to {platform}
+                            {isFirstLogin ? `Sign in to ${platform} to continue` : `Sign in to complete checkout`}
                         </p>
                         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: 0 }}>
-                            Log in directly in the browser — Buddy will detect it automatically
+                            {isFirstLogin ? 'Log in to Amazon in the browser - Buddy will detect it automatically' : 'Login required to proceed with payment'}
                         </p>
                     </div>
                 </div>
@@ -1214,7 +1195,219 @@ const AgentAwaitLoginCard = React.memo(({ platform, paymentInfo, onLoginDetected
     );
 });
 
-const LeftSidebar = React.memo(({ sessions, activeSession, onSelect, onNew }) => (
+const AgentProductApprovalCard = React.memo(({ message, onSubmit, onCancel }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const { products } = message;
+
+    useEffect(() => {
+        const p = products?.[currentIndex];
+        if (p && p.url) {
+            window.buddyAgent.checkoutStep({
+                type: 'amazon_preview_product',
+                url: p.url
+            }).catch(e => console.error("Preview error:", e));
+        }
+    }, [currentIndex, products]);
+    
+    if (!products || products.length === 0) return null;
+    if (currentIndex >= products.length) {
+        return (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '0.5px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                    <Sparkles size={9} style={{ color: 'rgba(248,113,113,0.8)' }} />
+                </div>
+                <div style={{ maxWidth: '88%', borderRadius: '16px 16px 16px 4px', background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.1)', padding: '12px', width: '100%' }}>
+                    <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, margin: '0 0 10px' }}>No more products matched your criteria.</p>
+                    <button onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                </div>
+            </div>
+        );
+    }
+    
+    const p = products[currentIndex];
+    if (!p) return <p style={{ color: 'white' }}>Loading...</p>;
+    
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{ maxWidth: '88%', borderRadius: '16px 16px 16px 4px', background: 'linear-gradient(135deg, rgba(15,15,22,0.95), rgba(20,14,30,0.92))', border: '0.5px solid rgba(99,102,241,0.2)', padding: '12px', width: '100%' }}>
+                <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: '0 0 10px' }}>
+                    🛒 Approve Product ({currentIndex + 1}/{products.length})
+                </p>
+                <div style={{ display: 'flex', gap: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: 8, border: '0.5px solid rgba(255,255,255,0.06)' }}>
+                    {p.image && <img src={p.image || ""} alt={p.title || 'Product'} style={{ width: 70, height: 70, objectFit: 'contain', borderRadius: 6, background: '#fff' }} />}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: '0 0 4px', lineHeight: 1.3 }}>
+                            {p.title ? (p.title.length > 70 ? p.title.slice(0, 67) + '...' : p.title) : 'Unknown'}
+                        </p>
+                        <p style={{ color: 'rgba(96,165,250,0.9)', fontSize: 14, fontWeight: 600, margin: '0 0 4px' }}>
+                            {p.price ? (typeof p.price === 'string' && p.price.includes('₹') ? p.price : `₹${p.price}`) : 'Price unavailable'}
+                        </p>
+                        {p.rating ? <p style={{ color: 'rgba(250,204,21,0.9)', fontSize: 11, margin: 0 }}>⭐ {p.rating}</p> : null}
+                    </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    <button onClick={() => onSubmit(p)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))', border: '0.5px solid rgba(99,102,241,0.4)', color: 'rgba(214,221,255,0.95)', cursor: 'pointer' }}>✓ Buy This</button>
+                    <button onClick={() => setCurrentIndex(currentIndex + 1)} style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>⏭ Skip</button>
+                    <button onClick={onCancel} style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>Cancel</button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const AgentPreCheckoutCard = React.memo(({ platform, onSubmit, onCancel }) => {
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(234,179,8,0.12)', border: '0.5px solid rgba(234,179,8,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <Sparkles size={9} style={{ color: 'rgba(250,204,21,0.8)' }} />
+            </div>
+            <div style={{ maxWidth: '88%', borderRadius: '16px 16px 16px 4px', background: 'linear-gradient(135deg, rgba(15,15,22,0.95), rgba(20,14,30,0.92))', border: '0.5px solid rgba(234,179,8,0.2)', padding: '14px', width: '100%' }}>
+                <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: '0 0 10px' }}>❓ Checkout Verification</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, marginBottom: 12, lineHeight: 1.5 }}>
+                    The product is in your cart. Should I proceed to checkout and place the order on {platform}?
+                </p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button onClick={onSubmit} style={{ width: '100%', padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, background: 'linear-gradient(135deg, rgba(52,211,153,0.2), rgba(16,185,129,0.15))', border: '0.5px solid rgba(52,211,153,0.4)', color: 'rgba(110,231,183,0.95)', cursor: 'pointer' }}>✅ Yes, proceed to buy</button>
+                    <button onClick={onCancel} style={{ width: '100%', padding: '8px 0', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>❌ No, let me do it manually</button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const ProductApprovalCard = React.memo(({ products, currentIndex, onApprove, onSkip, onCancel }) => {
+    const product = products?.[currentIndex];
+    if (!product) return null;
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{ maxWidth: '88%', borderRadius: '16px 16px 16px 4px', background: 'linear-gradient(135deg, rgba(14,14,22,0.95), rgba(20,14,30,0.92))', border: '0.5px solid rgba(99,102,241,0.2)', overflow: 'hidden', width: '100%' }}>
+                <div style={{ padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: 0 }}>Option {currentIndex + 1} of {products.length}</p>
+                        <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: 0 }}>
+                            {product.rating && `⭐ ${product.rating}`} {product.reviews && `(${product.reviews})`}
+                        </p>
+                    </div>
+                    {product.image && (
+                        <div style={{ width: '100%', height: 160, borderRadius: 10, overflow: 'hidden', marginBottom: 10, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <img src={product.image} alt={product.title} style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                        </div>
+                    )}
+                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, margin: '0 0 4px', lineHeight: 1.4 }}>{product.title?.slice(0, 80)}</p>
+                    <p style={{ color: 'rgba(96,165,250,0.9)', fontSize: 15, fontWeight: 600, margin: '0 0 12px' }}>₹{product.price?.toLocaleString?.()}</p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => onApprove(product)} style={{
+                            flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                            background: 'linear-gradient(135deg, rgba(52,211,153,0.25), rgba(59,130,246,0.2))',
+                            border: '0.5px solid rgba(52,211,153,0.4)', color: 'rgba(200,255,230,0.95)'
+                        }}>✓ Yes, Add to Cart</button>
+                        {currentIndex < products.length - 1 && (
+                            <button onClick={onSkip} style={{
+                                padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                                background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)',
+                                color: 'rgba(255,255,255,0.5)'
+                            }}>Next →</button>
+                        )}
+                        <button onClick={onCancel} style={{
+                            padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                            background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)',
+                            color: 'rgba(255,255,255,0.3)'
+                        }}>Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const PreCheckoutCard = React.memo(({ platform, onConfirm, onCancel }) => {
+    const [checked, setChecked] = useState([]);
+    const [otherText, setOtherText] = useState('');
+    const [showOther, setShowOther] = useState(false);
+
+    const questions = [
+        { id: 'return', label: '📦 Does this item have at least 7-day return policy?' },
+        { id: 'cancel', label: '❌ Can I cancel this order before delivery?' },
+        { id: 'warranty', label: '🛡️ Is there a warranty included?' },
+        { id: 'delivery', label: '🚚 What is the estimated delivery time?' },
+        { id: 'genuine', label: '✅ Is this a genuine/original product?' },
+        { id: 'cod', label: '💵 Is Cash on Delivery available for this item?' },
+    ];
+
+    const toggle = (id) => setChecked(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+            </div>
+            <div style={{ maxWidth: '88%', borderRadius: '16px 16px 16px 4px', background: 'linear-gradient(135deg, rgba(14,14,22,0.95), rgba(20,14,30,0.92))', border: '0.5px solid rgba(99,102,241,0.2)', padding: '12px 14px', width: '100%' }}>
+                <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>📋 Before proceeding - any questions?</p>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, margin: '0 0 10px' }}>Select what you&apos;d like to know, or skip to proceed</p>
+                {questions.map(q => (
+                    <div key={q.id} onClick={() => toggle(q.id)} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                        borderRadius: 8, marginBottom: 5, cursor: 'pointer',
+                        background: checked.includes(q.id) ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
+                        border: `0.5px solid ${checked.includes(q.id) ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.07)'}`,
+                        transition: 'all 0.2s ease'
+                    }}>
+                        <div style={{
+                            width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                            border: `1.5px solid ${checked.includes(q.id) ? 'rgba(99,102,241,0.8)' : 'rgba(255,255,255,0.2)'}`,
+                            background: checked.includes(q.id) ? 'rgba(99,102,241,0.6)' : 'transparent'
+                        }} />
+                        <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>{q.label}</p>
+                    </div>
+                ))}
+                <div onClick={() => setShowOther(p => !p)} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                    borderRadius: 8, marginBottom: showOther ? 6 : 10, cursor: 'pointer',
+                    background: showOther ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
+                    border: `0.5px solid ${showOther ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.07)'}`,
+                }}>
+                    <div style={{ width: 14, height: 14, borderRadius: 4, flexShrink: 0, border: `1.5px solid ${showOther ? 'rgba(99,102,241,0.8)' : 'rgba(255,255,255,0.2)'}`, background: showOther ? 'rgba(99,102,241,0.6)' : 'transparent' }} />
+                    <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, margin: 0 }}>💬 Others - type your question</p>
+                </div>
+                {showOther && (
+                    <input
+                        type="text" value={otherText}
+                        onChange={e => setOtherText(e.target.value)}
+                        onKeyDown={e => e.stopPropagation()}
+                        placeholder="Type your question..."
+                        style={{
+                            width: '100%', padding: '7px 10px', borderRadius: 8, marginBottom: 10,
+                            background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.12)',
+                            color: 'rgba(255,255,255,0.85)', fontSize: 12, outline: 'none', boxSizing: 'border-box'
+                        }}
+                    />
+                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => onConfirm({ questions: checked, other: otherText })} style={{
+                        flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                        background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))',
+                        border: '0.5px solid rgba(99,102,241,0.4)', color: 'rgba(214,221,255,0.95)'
+                    }}>
+                        {checked.length > 0 || otherText ? '📋 Ask & Proceed' : '✓ Proceed to Checkout'}
+                    </button>
+                    <button onClick={onCancel} style={{
+                        padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)',
+                        color: 'rgba(255,255,255,0.3)'
+                    }}>Cancel</button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const LeftSidebar = React.memo(({ sessions = [], activeSession, onSelect, onNew }) => (
     <div style={{
         position: 'fixed', left: 20, top: '50%', transform: 'translateY(-50%)',
         width: 160, zIndex: 60,
@@ -1233,10 +1426,10 @@ const LeftSidebar = React.memo(({ sessions, activeSession, onSelect, onNew }) =>
             }}>+ New</button>
         </div>
         <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-            {sessions.length === 0 && (
+            {(sessions || []).length === 0 && (
                 <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, textAlign: 'center', margin: '20px 0' }}>No history yet</p>
             )}
-            {sessions.map((s, i) => (
+            {(sessions || []).map((s, i) => (
                 <div
                     key={i}
                     onClick={() => onSelect(s)}
@@ -1261,7 +1454,16 @@ const LeftSidebar = React.memo(({ sessions, activeSession, onSelect, onNew }) =>
     </div>
 ));
 
-const AgentSelectCard = React.memo(({ action, options, onSelect, onLoadMore }) => {
+const AgentSelectCard = React.memo(({ action, options = [], onSelect, onLoadMore }) => {
+    if (!action) {
+        console.error("Spotlight crash: missing action in AgentSelectCard");
+        return <div>Spotlight Error</div>;
+    }
+
+    if (!options || options.length === 0) {
+        return <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>Loading...</p>;
+    }
+
     return (
         <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
             <div style={{
@@ -1286,13 +1488,13 @@ const AgentSelectCard = React.memo(({ action, options, onSelect, onLoadMore }) =
                             Multiple options found
                         </p>
                         <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, margin: 0 }}>
-                            Select an item within your ₹{action.budget} budget
+                            Select an item within your ₹{action?.budget ?? ''} budget
                         </p>
                     </div>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                    {options.map((opt, i) => (
+                    {(options || []).map((opt, i) => (
                         <div key={i} style={{
                             padding: '10px', borderRadius: 8,
                             background: 'rgba(255,255,255,0.03)',
@@ -1300,7 +1502,7 @@ const AgentSelectCard = React.memo(({ action, options, onSelect, onLoadMore }) =
                             display: 'flex', flexDirection: 'column', gap: 6
                         }}>
                             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, margin: 0, lineHeight: 1.3 }}>
-                                {opt.title.length > 60 ? opt.title.slice(0, 57) + '...' : opt.title}
+                                {(opt?.title || '').length > 60 ? (opt?.title || '').slice(0, 57) + '...' : (opt?.title || 'Untitled item')}
                             </p>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1482,56 +1684,116 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
                                 console.log('[Frontend] Executing with budget:', actionWithBudget.budget);
 
                                 if (actionWithBudget.budget !== null && actionWithBudget.budget < 100) {
-                                    // Show warning but still proceed
                                     console.warn('[Frontend] Budget seems very low:', actionWithBudget.budget);
                                 }
 
                                 setPendingAgentAction(null);
                                 setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'agent-done', status: 'running', text: '🚀 Launching automation...' } : m));
-                                const result = await window.buddyAgent.execute(actionWithBudget);
-                                console.log('[Frontend] Agent result:', result);
 
-                                if (result.success) {
-                                    setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                if (actionWithBudget.platform.toLowerCase() === 'amazon') {
+                                    setMessages(prev => [...prev, {
                                         role: 'buddy',
-                                        text: `✅ Added to cart! ${result.productTitle ? `"${result.productTitle}"` : ''} ${result.productPrice ? `at ₹${result.productPrice}` : ''}\n\nProceeding to checkout...`,
-                                        timestamp: m.timestamp
-                                    } : m));
-                                    setTimeout(() => {
+                                        text: `🔐 Taking you to Amazon login first...`,
+                                        timestamp: Date.now()
+                                    }]);
+                                    
+                                    const agentAction = actionWithBudget;
+                                    // Call login goto via execute (launches browser)
+                                    const loginResult = await window.buddyAgent.execute({ type: 'amazon_login_goto' });
+
+                                    if (!loginResult.success) {
                                         setMessages(prev => [...prev, {
-                                            role: 'agent-payment',
-                                            platform: msg.action.platform,
+                                            role: 'buddy',
+                                            text: `⚠️ Could not open login page: ${loginResult.error}`,
                                             timestamp: Date.now()
                                         }]);
-                                    }, 800);
-                                } else if (result.budgetExceeded) {
-                                    setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
-                                        role: 'agent-rebudget',
-                                        action: msg.action,
-                                        originalBudget: result.originalBudget,
-                                        cheapestAvailable: result.cheapestAvailable,
-                                        cheapestTitle: result.cheapestTitle,
-                                        timestamp: m.timestamp
-                                    } : m));
-                                } else if (!result.success && result.needsSelection) {
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'agent-select',
-                                        action: actionWithBudget,
-                                        options: result.options,
-                                        timestamp: m.timestamp
-                                    } : m));
-                                } else if (!result.success && result.loginRequired) {
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: `⚠️ ${result.message || 'Please login to Amazon to continue.'}`,
-                                        timestamp: m.timestamp
-                                    } : m));
+                                        return;
+                                    }
+
+                                    if (loginResult.alreadyLoggedIn) {
+                                        // Already logged in — skip to search
+                                        setMessages(prev => prev.map((m, idx) => idx === messages.length ? {
+                                            role: 'buddy',
+                                            text: '✅ Already logged in! Searching for your item...',
+                                            timestamp: Date.now()
+                                        } : m));
+                                        // trigger search directly
+                                        const searchResult = await window.buddyAgent.checkoutStep({
+                                            ...agentAction,
+                                            type: 'amazon_search'
+                                        });
+
+                                        if (searchResult.success && searchResult.products) {
+                                            setMessages(prev => [...prev, {
+                                                role: 'agent-product-approval',
+                                                action: agentAction,
+                                                products: searchResult.products,
+                                                timestamp: Date.now()
+                                            }]);
+                                        } else {
+                                            setMessages(prev => [...prev, {
+                                                role: 'buddy',
+                                                text: `⚠️ Search failed: ${searchResult.error || 'No products found.'}`,
+                                                timestamp: Date.now()
+                                            }]);
+                                        }
+                                        return;
+                                    }
+
+                                    // Login page is ready — NOW show the await login card
+                                    setMessages(prev => [...prev, {
+                                        role: 'agent-await-login',
+                                        platform: agentAction.platform,
+                                        isFirstLogin: true,
+                                        agentAction,
+                                        timestamp: Date.now()
+                                    }]);
                                 } else {
-                                    setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
-                                        role: 'buddy',
-                                        text: `⚠️ ${result.error || 'Something went wrong'}`,
-                                        timestamp: m.timestamp
-                                    } : m));
+                                    const result = await window.buddyAgent.execute(actionWithBudget);
+                                    console.log('[Frontend] Agent result:', result);
+
+                                    if (result.success) {
+                                        setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                            role: 'buddy',
+                                            text: `✅ Added to cart! ${result.productTitle ? `"${result.productTitle}"` : ''} ${result.productPrice ? `at ₹${result.productPrice}` : ''}\n\nProceeding to checkout...`,
+                                            timestamp: m.timestamp
+                                        } : m));
+                                        setTimeout(() => {
+                                            setMessages(prev => [...prev, {
+                                                role: 'agent-payment',
+                                                platform: msg.action.platform,
+                                                timestamp: Date.now()
+                                            }]);
+                                        }, 800);
+                                    } else if (result.budgetExceeded) {
+                                        setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                            role: 'agent-rebudget',
+                                            action: msg.action,
+                                            originalBudget: result.originalBudget,
+                                            cheapestAvailable: result.cheapestAvailable,
+                                            cheapestTitle: result.cheapestTitle,
+                                            timestamp: m.timestamp
+                                        } : m));
+                                    } else if (!result.success && result.needsSelection) {
+                                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                            role: 'agent-select',
+                                            action: actionWithBudget,
+                                            options: result.options,
+                                            timestamp: m.timestamp
+                                        } : m));
+                                    } else if (!result.success && result.loginRequired) {
+                                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                            role: 'buddy',
+                                            text: `⚠️ ${result.message || 'Please login to Amazon to continue.'}`,
+                                            timestamp: m.timestamp
+                                        } : m));
+                                    } else {
+                                        setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
+                                            role: 'buddy',
+                                            text: `⚠️ ${result.error || 'Something went wrong'}`,
+                                            timestamp: m.timestamp
+                                        } : m));
+                                    }
                                 }
                             }}
                             style={{
@@ -1571,9 +1833,11 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
     );
 };
 
-const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction }) => {
-    const [settingsOpen, setSettingsOpen] = useState(true);
-    const messageList = useMemo(() => messages.map((msg, index) => {
+const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction }) => {
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const safeMessages = Array.isArray(messages) ? messages : [];
+
+    const messageList = useMemo(() => safeMessages.map((msg, index) => {
         // Agent confirmation card
         if (msg.role === 'agent-confirm') {
             return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
@@ -1787,20 +2051,27 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                             if (!paymentResult.success) {
                                 setMessages(prev => [...prev, {
                                     role: 'buddy',
-                                    text: `âš ï¸ Payment selection issue: ${paymentResult.error}\n\nPlease complete payment manually in the browser.`,
+                                    text: `⚠️ Payment selection issue: ${paymentResult.error}\n\nPlease complete payment manually in the browser.`,
                                     timestamp: Date.now()
                                 }]);
                                 return;
                             }
 
+                            // Show order approval card — do NOT auto place order
                             setMessages(prev => [...prev, {
-                                role: 'agent-place-order',
+                                role: 'agent-order-approval',
                                 platform: msg.platform,
                                 paymentMethod: paymentInfo.method,
                                 timestamp: Date.now()
                             }]);
                         }
-                    }}
+                    }} /*
+                                setMessages(prev => [...prev, {
+                                    role: 'buddy',
+                                    text: `âš ï¸ Payment selection issue: ${paymentResult.error}\n\nPlease complete payment manually in the browser.`,
+                                    timestamp: Date.now()
+                                }]);
+*/
                     onCancel={() => {
                         setMessages(prev => prev.map((m, idx) => idx === index ? {
                             role: 'buddy',
@@ -1812,48 +2083,295 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
             );
         }
 
-        if (msg.role === 'agent-await-login') {
+        if (msg.role === 'agent-order-approval') {
             return (
-                <AgentAwaitLoginCard
+                <div key={index} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+                    <div style={{
+                        width: 20, height: 20, borderRadius: '50%',
+                        background: 'rgba(52,211,153,0.12)',
+                        border: '0.5px solid rgba(52,211,153,0.3)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0, marginTop: 2
+                    }}>
+                        <Sparkles size={9} style={{ color: 'rgba(52,211,153,0.8)' }} />
+                    </div>
+                    <div style={{
+                        maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
+                        background: 'linear-gradient(135deg, rgba(52,211,153,0.08), rgba(99,102,241,0.06))',
+                        border: '0.5px solid rgba(52,211,153,0.3)',
+                        padding: '14px', width: '100%'
+                    }}>
+                        <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>
+                            🛒 Ready to place order!
+                        </p>
+                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 12px' }}>
+                            Payment: {msg.paymentMethod?.toUpperCase()} · Platform: {msg.platform}<br/>
+                            Do you want to place this order?
+                        </p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                                onClick={async () => {
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: '🛒 Placing your order...',
+                                        timestamp: m.timestamp
+                                    } : m));
+
+                                    const result = await window.buddyAgent.checkoutStep({
+                                        type: `${msg.platform.toLowerCase()}_place_order`
+                                    });
+
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: result.success
+                                            ? `🎉 ${result.message || 'Order placed successfully!'}\n\nCheck your email for confirmation!`
+                                            : `⚠️ ${result.error || 'Could not place order. Please click Place Order in the browser.'}`,
+                                        timestamp: m.timestamp
+                                    } : m));
+                                }}
+                                style={{
+                                    flex: 1, padding: '9px 0', borderRadius: 8,
+                                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                                    background: 'linear-gradient(135deg, rgba(52,211,153,0.3), rgba(59,130,246,0.2))',
+                                    border: '0.5px solid rgba(52,211,153,0.5)',
+                                    color: 'rgba(200,255,230,0.95)',
+                                    letterSpacing: '0.03em'
+                                }}
+                            >
+                                ✅ YES — Place Order
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
+                                        role: 'buddy',
+                                        text: '❌ Order cancelled. Your cart is saved — you can order later!',
+                                        timestamp: m.timestamp
+                                    } : m));
+                                }}
+                                style={{
+                                    flex: 1, padding: '9px 0', borderRadius: 8,
+                                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                                    background: 'rgba(239,68,68,0.1)',
+                                    border: '0.5px solid rgba(239,68,68,0.3)',
+                                    color: 'rgba(255,180,180,0.9)',
+                                    letterSpacing: '0.03em'
+                                }}
+                            >
+                                ❌ NO — Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        if (msg.role === 'agent-product-approval') {
+            return (
+                <ProductApprovalCard
                     key={index}
-                    platform={msg.platform}
-                    paymentInfo={msg.paymentInfo}
-                    onLoginDetected={async () => {
-                        // Replace card with processing message
+                    products={msg.products}
+                    currentIndex={msg.currentIndex || 0}
+                    onApprove={async (product) => {
                         setMessages(prev => prev.map((m, idx) => idx === index ? {
                             role: 'buddy',
-                            text: '✅ Login detected! Selecting your payment method...',
+                            text: `Great choice! Adding "${product.title?.slice(0, 40)}" (Rs. ${product.price}) to cart...`,
                             timestamp: m.timestamp
                         } : m));
 
-                        // Select payment method
-                        const paymentResult = await window.buddyAgent.checkoutStep({
-                            type: `${msg.platform.toLowerCase()}_select_payment`,
-                            method: msg.paymentInfo.method,
-                            upiId: msg.paymentInfo.upiId
+                        const cartResult = await window.buddyAgent.checkoutStep({
+                            type: 'amazon_add_to_cart',
+                            url: product.url
                         });
 
-                        if (!paymentResult.success) {
+                        if (!cartResult.success) {
                             setMessages(prev => [...prev, {
                                 role: 'buddy',
-                                text: `⚠️ Could not select payment automatically: ${paymentResult.error || 'Unknown error'}\n\nPlease continue in the browser.`,
+                                text: `Add to cart failed: ${cartResult.error}`,
                                 timestamp: Date.now()
                             }]);
                             return;
                         }
 
-                        // Show place order card
                         setMessages(prev => [...prev, {
-                            role: 'agent-place-order',
-                            platform: msg.platform,
-                            paymentMethod: msg.paymentInfo.method,
+                            role: 'agent-pre-checkout',
+                            platform: msg.agentAction?.platform || 'Amazon',
                             timestamp: Date.now()
                         }]);
+                    }}
+                    onSkip={() => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            ...m,
+                            currentIndex: (m.currentIndex || 0) + 1
+                        } : m));
                     }}
                     onCancel={() => {
                         setMessages(prev => prev.map((m, idx) => idx === index ? {
                             role: 'buddy',
-                            text: '❌ Cancelled. Complete the order manually in the browser.',
+                            text: 'Order cancelled.',
+                            timestamp: m.timestamp
+                        } : m));
+                    }}
+                />
+            );
+        }
+
+        if (msg.type === 'system') {
+            if (msg.text && msg.text.includes("Select payment method:")) {
+                return (
+                    <div key={index} style={{ padding: 12, borderRadius: 12, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: 8, maxWidth: '85%' }}>
+                        <p style={{ color: 'white', fontSize: 13, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 16 }}>💳</span>
+                            Select Payment Method
+                        </p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            {['COD', 'UPI', 'CARD'].map(opt => (
+                                <button key={opt} onClick={() => handlePaymentSelection(index, opt)} style={{ padding: '8px 16px', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', cursor: 'pointer', fontSize: 12, flex: 1 }}>
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div key={index} style={{ padding: 8, marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
+                    <span style={{ padding: '4px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 16, fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                        {msg.text}
+                    </span>
+                </div>
+            );
+        }
+
+        if (msg.role === 'agent-login-request') {
+            return (
+                <div key={index} style={{ padding: 12, borderRadius: 12, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: 8, maxWidth: '85%' }}>
+                    <p style={{ color: 'white', fontSize: 13, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 16 }}>🔐</span>
+                        Login Required
+                    </p>
+                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, margin: '0 0 12px' }}>
+                        Amazon login requires your input. Please click below when you're ready to open the browser and proceed to the login page.
+                    </p>
+                    <button onClick={() => handleLegacyLoginApproval(index)} style={{ padding: '8px 16px', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', cursor: 'pointer', fontSize: 12, width: '100%' }}>
+                        Proceed to login
+                    </button>
+                </div>
+            );
+        }
+
+        if (msg.role === 'agent-pre-checkout') {
+            return (
+                <PreCheckoutCard
+                    key={index}
+                    platform={msg.platform}
+                    onConfirm={async ({ questions, other }) => {
+                        let responseText = 'Proceeding to checkout!';
+                        if (questions.length > 0 || other) {
+                            const qMap = {
+                                return: 'Return Policy: Most Amazon items have 7-30 day return window. Check product page for specifics.',
+                                cancel: 'Cancellation: You can cancel before shipment from Your Orders page.',
+                                warranty: 'Warranty: Check product description or contact seller.',
+                                delivery: 'Delivery: Usually 2-5 business days. Check pincode availability.',
+                                genuine: 'Authenticity: Look for "Sold by Amazon" or authorized sellers.',
+                                cod: 'COD: Available for most items. Will be shown at checkout.'
+                            };
+                            const answers = questions.map(q => qMap[q] || '').filter(Boolean);
+                            if (other) answers.push(`Other: "${other}" - Please verify this directly on Amazon.`);
+                            responseText = answers.join('\n\n') + '\n\nProceeding to checkout now!';
+                        }
+
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy', text: responseText, timestamp: m.timestamp
+                        } : m));
+
+                        await new Promise(res => setTimeout(res, 1000));
+                        const checkoutResult = await window.buddyAgent.checkoutStep({ type: 'amazon_goto_checkout' });
+
+                        if (!checkoutResult.success) {
+                            setMessages(prev => [...prev, { role: 'buddy', text: checkoutResult.error, timestamp: Date.now() }]);
+                            return;
+                        }
+
+                        if (checkoutResult.needsLogin) {
+                            setMessages(prev => [...prev, {
+                                role: 'agent-await-login',
+                                platform: msg.platform,
+                                isFirstLogin: false,
+                                timestamp: Date.now()
+                            }]);
+                        } else {
+                            setMessages(prev => [...prev, {
+                                role: 'agent-payment',
+                                platform: msg.platform,
+                                timestamp: Date.now()
+                            }]);
+                        }
+                    }}
+                    onCancel={() => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy', text: 'Checkout cancelled. Your cart is saved!', timestamp: m.timestamp
+                        } : m));
+                    }}
+                />
+            );
+        }
+
+        if (msg.role === 'agent-await-login') {
+            return (
+                <AgentAwaitLoginCard
+                    key={index}
+                    platform={msg.platform}
+                    isFirstLogin={msg.isFirstLogin}
+                    paymentInfo={msg.paymentInfo}
+                    onLoginDetected={async () => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: 'Logged in! Now searching for your item...',
+                            timestamp: m.timestamp
+                        } : m));
+
+                        if (msg.isFirstLogin && msg.agentAction) {
+                            const searchResult = await window.buddyAgent.execute({
+                                ...msg.agentAction,
+                                type: msg.agentAction.type || 'amazon_search'
+                            });
+
+                            if (!searchResult.success) {
+                                if (searchResult.budgetExceeded) {
+                                    setMessages(prev => [...prev, {
+                                        role: 'agent-rebudget',
+                                        action: msg.agentAction,
+                                        originalBudget: searchResult.originalBudget,
+                                        cheapestAvailable: searchResult.cheapestAvailable,
+                                        cheapestTitle: searchResult.cheapestTitle,
+                                        timestamp: Date.now()
+                                    }]);
+                                } else {
+                                    setMessages(prev => [...prev, { role: 'buddy', text: searchResult.error, timestamp: Date.now() }]);
+                                }
+                                return;
+                            }
+
+                            setMessages(prev => [...prev, {
+                                role: 'agent-product-approval',
+                                products: searchResult.products,
+                                currentIndex: 0,
+                                agentAction: msg.agentAction,
+                                timestamp: Date.now()
+                            }]);
+                        } else {
+                            setMessages(prev => [...prev, {
+                                role: 'agent-payment',
+                                platform: msg.platform,
+                                timestamp: Date.now()
+                            }]);
+                        }
+                    }}
+                    onCancel={() => {
+                        setMessages(prev => prev.map((m, idx) => idx === index ? {
+                            role: 'buddy',
+                            text: 'Cancelled.',
                             timestamp: m.timestamp
                         } : m));
                     }}
@@ -1880,7 +2398,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                         padding: '12px 14px'
                     }}>
                         <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>
-                            🎉 Ready to place order!
+                            Proceed to payment?
                         </p>
                         <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 10px' }}>
                             Payment: {msg.paymentMethod?.toUpperCase()} · Platform: {msg.platform}
@@ -1890,7 +2408,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                                 onClick={async () => {
                                     setMessages(prev => prev.map((m, idx) => idx === index ? {
                                         role: 'buddy',
-                                        text: '🛒 Placing your order...',
+                                        text: '🛒 Processing payment & placing your order...',
                                         timestamp: m.timestamp
                                     } : m));
                                     const result = await window.buddyAgent.checkoutStep({
@@ -1899,8 +2417,8 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                                     setMessages(prev => prev.map((m, idx) => idx === index ? {
                                         role: 'buddy',
                                         text: result.success
-                                            ? `🎉 ${result.message || 'Order placed successfully!'}\n\nCheck your email for confirmation!`
-                                            : `⚠️ ${result.error || 'Could not place order automatically. Please click Place Order in the browser.'}`,
+                                            ? `🎉 ${result.message || 'Payment confirmed & order placed!'}\n\nCheck your email for confirmation!`
+                                            : `⚠️ ${result.error || 'Could not place order automatically. Please confirm payment manually.'}`,
                                         timestamp: m.timestamp
                                     } : m));
                                 }}
@@ -1913,7 +2431,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                🛒 Place Order Now
+                                ✅ Yes, Proceed to Payment
                             </button>
                             <button
                                 onClick={() => {
@@ -2011,7 +2529,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages, onClose
                 </div>
             </div>
         );
-    }), [messages, setMessages, setPendingAgentAction, setChatOpen, setSidebarVisible]);
+    }), [safeMessages, setMessages, setPendingAgentAction, setChatOpen, setSidebarVisible]);
 
     return (
         <div
@@ -2337,7 +2855,10 @@ const parseAgentCommand = (text) => {
 };
 
 const Spotlight = React.memo(() => {
-    const [messages, setMessages] = useState(() => getHistory());
+    const [messages, setMessages] = useState(() => {
+        const history = getHistory();
+        return Array.isArray(history) ? history : [];
+    });
     const [chatSessions, setChatSessions] = useState([]);
     const [activeSession, setActiveSession] = useState(null);
     const [pendingAgentAction, setPendingAgentAction] = useState(null);
@@ -2345,8 +2866,8 @@ const Spotlight = React.memo(() => {
     const [isTyping, setIsTyping] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     const [sidebarVisible, setSidebarVisible] = useState(true);
-    const [showSplash, setShowSplash] = useState(false);
-    const [mainVisible, setMainVisible] = useState(true);
+    const [showSplash, setShowSplash] = useState(true);
+    const [mainVisible, setMainVisible] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [sttOnline, setSttOnline] = useState(false);
     const inputRef = useRef(null);
@@ -2355,11 +2876,21 @@ const Spotlight = React.memo(() => {
     const messagesRef = useRef(messages);
     const loadingRef = useRef(isLoading);
     const pollRef = useRef(null);
+    const hasStarted = useRef(false);
 
     useEffect(() => {
         messagesRef.current = messages;
         setHistory(messages);
     }, [messages]);
+
+    useEffect(() => {
+        // Mounted once; logging removed to avoid render spam.
+    }, []);
+
+    useEffect(() => {
+        if (hasStarted.current) return;
+        hasStarted.current = true;
+    }, []);
 
     useEffect(() => {
         loadingRef.current = isLoading;
@@ -2387,13 +2918,50 @@ const Spotlight = React.memo(() => {
         };
     }, []);
 
+    useEffect(() => {
+        if (!window.api) return;
+        const loginReqHandler = () => {
+            console.log("📥 Login required from main process");
+            setMessages(prev => [...prev, {
+                role: 'agent-login-request',
+                timestamp: Date.now()
+            }]);
+            setChatOpen(true);
+        };
+        const addMsgHandler = (msg) => {
+            setMessages(prev => [...prev, msg]);
+            window.focus();
+        };
+        
+        window.api.on("login-required", loginReqHandler);
+        window.api.on("add-message", addMsgHandler);
+        
+        return () => {
+            window.api.removeListener("login-required", loginReqHandler);
+            window.api.removeListener("add-message", addMsgHandler);
+        };
+    }, []);
+
     const handleSplashDone = useCallback(() => {
         setShowSplash(false);
-
         setTimeout(() => {
             setMainVisible(true);
-            setTimeout(() => inputRef.current?.focus(), 100);
+            setTimeout(() => inputRef.current?.focus(), 150);
         }, 80);
+    }, []);
+
+    const handlePaymentSelection = useCallback((index, option) => {
+        if (window.api) {
+            window.api.send("payment-selected", option);
+        }
+        setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, type: null, text: `âœ… Selected ${option}` } : m));
+    }, []);
+
+    const handleLegacyLoginApproval = useCallback((index) => {
+        if (window.api) {
+            window.api.send("login-approved");
+        }
+        setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'buddy', text: 'âœ… Proceeding to login...' } : m));
     }, []);
 
     useEffect(() => {
@@ -2478,6 +3046,25 @@ const Spotlight = React.memo(() => {
         }
 
         // ── 3. Agent commands → backend via IPC ──────────────────────────────
+        const agentAction = parseAgentCommand(finalText);
+        if (agentAction?.platform === 'Amazon') {
+            setMessages(prev => [...prev, userMsg]);
+            addMessage(userMsg);
+            setMessages(prev => [...prev, {
+                role: 'agent-await-login',
+                platform: agentAction.platform,
+                isFirstLogin: true,
+                agentAction,
+                timestamp: Date.now()
+            }]);
+
+            const loginResult = await window.buddyAgent.checkoutStep({ type: 'amazon_login_goto' });
+            if (!loginResult.success) {
+                setMessages(prev => [...prev, { role: 'buddy', text: '⚠️ Could not open login page.', timestamp: Date.now() }]);
+            }
+            return true;
+        }
+
         const agentKeywords = ['order', 'buy', 'zomato', 'swiggy', 'amazon', 'flipkart', 'uber', 'ola', 'bookmyshow'];
         const isAgentCmd = agentKeywords.some(w => lower.includes(w))
             || (lower.includes('book') && (lower.includes('cab') || lower.includes('movie') || lower.includes('ticket')));
@@ -2714,16 +3301,16 @@ const Spotlight = React.memo(() => {
             {showSplash && <WelcomeSplash onDone={handleSplashDone} />}
             <Sidebar visible={sidebarVisible && mainVisible} />
             <LeftSidebar
-                sessions={chatSessions}
+                sessions={chatSessions || []}
                 activeSession={activeSession}
-                onSelect={(s) => { setMessages(s.messages); setActiveSession(s); setChatOpen(true); }}
+                onSelect={(s) => { setMessages(Array.isArray(s?.messages) ? s.messages : []); setActiveSession(s); setChatOpen(true); }}
                 onNew={() => {
-                    if (messages.length > 0) {
+                    if ((messages || []).length > 0) {
                         const session = {
                             id: Date.now(),
-                            title: messages.find(m => m.role === 'user')?.text?.slice(0, 25) || 'Chat',
+                            title: (messages || []).find(m => m?.role === 'user')?.text?.slice(0, 25) || 'Chat',
                             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            messages: [...messages]
+                            messages: [...(messages || [])]
                         };
                         setChatSessions(prev => [session, ...prev].slice(0, 20));
                     }
@@ -2734,7 +3321,12 @@ const Spotlight = React.memo(() => {
                 }}
             />
 
-            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4" style={spotlightStyle}>
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4" style={{
+                ...spotlightStyle,
+                opacity: mainVisible ? 1 : 0,
+                pointerEvents: mainVisible ? 'auto' : 'none',
+                transition: 'opacity 0.6s ease'
+            }}>
                 {/* Ambient background orbs */}
                 <div className="orb1" style={{
                     position: 'absolute', width: 400, height: 400,
@@ -2760,8 +3352,8 @@ const Spotlight = React.memo(() => {
                     }} />
                     <div className="w-full flex flex-col">
                         <ChatHeader />
-                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} />
-                        {messages.length === 0 && !chatOpen && (
+                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages || []} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} />
+                        {(messages || []).length === 0 && !chatOpen && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                                 justifyContent: 'center', padding: '28px 20px', gap: 8
@@ -2806,4 +3398,39 @@ const Spotlight = React.memo(() => {
     );
 });
 
-export default Spotlight;
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false };
+    }
+
+    static getDerivedStateFromError() {
+        return { hasError: true };
+    }
+
+    componentDidCatch(error, info) {
+        console.error("React Crash:", error, info);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{ color: 'white', padding: 20, textAlign: 'center', fontFamily: 'sans-serif' }}>
+                    <h2 style={{ color: '#ef4444' }}>⚠️ UI Crashed</h2>
+                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>Please check the DevTools console.</p>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+const SpotlightWithBoundary = (props) => (
+    <ErrorBoundary>
+        <Spotlight {...props} />
+    </ErrorBoundary>
+);
+
+export default SpotlightWithBoundary;
+
+
