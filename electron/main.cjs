@@ -18,6 +18,13 @@ let isLoggedIn = false;
 let loginUIShown = false;
 let isAutomationRunning = false;
 
+let agentState = 'idle'; // idle | waiting_login | searching | selecting_product | checkout | payment | awaiting_approval
+let agentBudget = null;
+let agentQuery = null;
+let agentProducts = [];
+let agentCurrentProductIndex = 0;
+let loginDetectionInterval = null;
+
 function triggerLoginUI(mainWindow) {
     if (isLoggedIn) return;
     if (loginUIShown) return;
@@ -44,56 +51,45 @@ function sanitizeActionForLog(action) {
     return safe;
 }
 
-// Find Chrome executable path on Windows
-function getChromeExecutablePath() {
-    const paths = [
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
-        path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
-        path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
-    ];
-    for (const p of paths) {
-        if (!p) continue;
-        try {
-            if (fs.existsSync(p)) return p;
-        } catch {}
+async function getBrowserPage() {
+    console.log("Automation started");
+    try {
+        if (!browser) {
+            console.log("Launching browser...");
+            browser = await puppeteer.launch({
+                headless: false,
+                executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                defaultViewport: null,
+                args: ["--start-maximized"],
+            });
+
+            browser.on("disconnected", () => {
+                console.log("Browser disconnected");
+                browser = null;
+                page = null;
+            });
+            console.log("Browser launched successfully");
+        }
+
+        if (!page || page.isClosed()) {
+            console.log("Creating new page...");
+            page = await browser.newPage();
+        }
+
+        global.activeBrowser = browser;
+        global.activePage = page;
+
+        return page;
+
+    } catch (err) {
+        console.error("Browser launch failed:", err);
+
+        // FORCE RESET
+        browser = null;
+        page = null;
+
+        throw err;
     }
-    return null;
-}
-
-async function ensureActiveBrowserPage() {
-    const chromePath = getChromeExecutablePath();
-    if (!chromePath) throw new Error('Chrome not found');
-
-    // Launch browser ONLY ONCE
-    if (!browser) {
-        console.log('[Agent] Launching Chrome...');
-
-        browser = await puppeteer.launch({
-            executablePath: chromePath,
-            headless: false,
-            defaultViewport: null,
-            args: ['--start-maximized']
-        });
-
-        browser.on('disconnected', () => {
-            console.log('[Agent] Browser closed');
-            browser = null;
-            page = null;
-        });
-    }
-
-    // Create page if missing
-    if (!page || page.isClosed()) {
-        console.log('[Agent] Creating new page...');
-        page = await browser.newPage();
-    }
-
-    global.activeBrowser = browser;
-    global.activePage = page;
-
-    return page;
 }
 
 // Only detect login when there's a real login WALL (modal, full-page form)
@@ -591,7 +587,7 @@ async function handleLogin(page, mainWindow) {
     isLoggedIn = true;
     loginUIShown = false;
 
-    await page.waitForTimeout(2000);
+    await new Promise(res => setTimeout(res, 2000));
 }
 
 async function selectPaymentMethod(page, mainWindow) {
@@ -635,13 +631,13 @@ async function placeOrder(page) {
     try {
         console.log("Waiting for checkout page...");
 
-        await page.waitForTimeout(3000);
+        await new Promise(res => setTimeout(res, 3000));
 
         await page.evaluate(() => {
             window.scrollTo(0, document.body.scrollHeight);
         });
 
-        await page.waitForTimeout(2000);
+        await new Promise(res => setTimeout(res, 2000));
 
         const selectors = [
             'input[name="placeYourOrder1"]',
@@ -726,36 +722,7 @@ async function executeAgentAction(action) {
         action.query = "";
     }
 
-    const existingPage = action.page || global.activePage || null;
-    let page;
-    
-    // For actions that need existing session
-    const needsExistingSession = [
-        'amazon_search', 'amazon_preview_product', 'amazon_add_to_cart', 'amazon_goto_checkout',
-        'amazon_poll_login', 'amazon_select_payment', 'amazon_place_order',
-        'amazon_poll_address', 'amazon_submit_address', 'flipkart_goto_checkout', 'flipkart_poll_login'
-    ];
-    
-    if (needsExistingSession.includes(action.type)) {
-        if (!existingPage || existingPage.isClosed()) {
-            return { success: false, error: 'No active browser session. Please start the order again.' };
-        }
-        page = existingPage;
-    } else if (action.type === 'amazon_login_goto') {
-        // Handled inside the case — launches new browser
-        page = null;
-    } else {
-        // Fresh browser launch for new orders
-        
-        try {
-            page = await ensureActiveBrowserPage();
-            console.log('[Agent] Browser launched successfully');
-        } catch (launchError) {
-            console.error('[Agent] FAILED to launch browser:', launchError.message);
-            throw new Error(`Failed to launch browser: ${launchError.message}`);
-        }
-
-    }
+    const page = await getBrowserPage();
 
     const checkLoginBreak = async () => {
         try {
@@ -774,68 +741,92 @@ async function executeAgentAction(action) {
         console.log('[Agent] Executing action type:', action.type);
         // ── STEP 1: Login check ─────────────────────────────────────────────
         if (action.type === 'amazon_login_goto') {
-            console.log('STEP: Launching browser for Amazon login');
-            let page;
+            console.log('[Agent] STEP 1: Opening Amazon login page');
+            agentState = 'waiting_login';
+            
             try {
-                page = await ensureActiveBrowserPage();
-            } catch (err) {
-                return { success: false, error: err.message };
-            }
-
-            // Go to Amazon homepage first
-            await page.goto('https://www.amazon.in', { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await new Promise(res => setTimeout(res, 1500));
-
-            // Click Sign In button on homepage
-            try {
-                await page.evaluate(() => {
-                    const el = document.querySelector('#nav-link-accountList, #nav-signin-tooltip a, a[data-nav-role="signin"]');
-                    if (el) el.click();
-                });
-                await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-            } catch {}
-
-            // Wait until email/phone input is ACTUALLY visible
-            try {
-                await page.waitForSelector('#ap_email, input[name="email"], input[type="email"]', { timeout: 15000 });
-                console.log('STEP: Login input visible — ready for user');
-            } catch {
-                console.log('STEP: Could not find login input — may already be logged in');
-                const url = page.url();
-                if (!url.includes('signin') && !url.includes('ap/')) {
+                const p = await getBrowserPage();
+                const loginUrl = 'https://www.amazon.in/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.in%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=inflex&openid.mode=checkid_setup&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0';
+                await p.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await new Promise(res => setTimeout(res, 1500));
+                
+                const url = p.url();
+                console.log('[Agent] Login page URL:', url);
+                
+                // Check if already logged in
+                const alreadyLoggedIn = !url.includes('signin') && !url.includes('ap/');
+                if (alreadyLoggedIn) {
+                    agentState = 'searching';
                     return { success: true, alreadyLoggedIn: true };
                 }
+                
+                return { success: true, loginPageReady: true };
+            } catch (err) {
+                agentState = 'idle';
+                return { success: false, error: err.message };
             }
-
-            return { success: true, loginPageReady: true };
         }
 
         if (action.type === 'amazon_poll_login') {
-            const url = page.url();
-            const isLocalLoggedIn = isLoggedIn || (!url.includes('/ap/signin') && !url.includes('/ap/'));
-            console.log('STEP: Poll login. LoggedIn:', isLocalLoggedIn, 'URL:', url);
-            return { success: true, isLoggedIn: isLocalLoggedIn, currentUrl: url };
+            try {
+                if (!global.activePage || global.activePage.isClosed()) {
+                    return { success: true, isLoggedIn: false };
+                }
+                const p = global.activePage;
+                const url = p.url();
+                
+                // Check URL — if not on signin page, logged in
+                const isLoggedInUrl = !url.includes('/ap/signin') && !url.includes('/ap/') && 
+                                   (url.includes('amazon.in') && !url.includes('signin'));
+                
+                // Also check for account element
+                if (!isLoggedInUrl) {
+                    const hasAccount = await p.evaluate(() => {
+                        const el = document.querySelector('#nav-link-accountList');
+                        return el && !el.textContent.includes('Sign in');
+                    }).catch(() => false);
+                    
+                    console.log('[Agent] Poll login - URL:', url, 'hasAccount:', hasAccount);
+                    if (hasAccount) agentState = 'searching';
+                    return { success: true, isLoggedIn: hasAccount, currentUrl: url };
+                }
+                
+                console.log('[Agent] Poll login - logged in detected via URL');
+                agentState = 'searching';
+                return { success: true, isLoggedIn: true, currentUrl: url };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
         }
 
         // ── STEP 2: Smart product search — returns list for user selection ──
         if (action.type === 'amazon_search') {
-            console.log('STEP: Searching Amazon for:', action.query);
-            await page.goto(`https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await new Promise(res => setTimeout(res, 3000));
-
+            console.log('[Agent] STEP 2: Searching Amazon for:', action.query, '| Budget: ₹', action.budget);
+            agentState = 'searching';
+            
+            const p = global.activePage;
+            if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
+            
             const budget = action.budget ? parseFloat(action.budget) : null;
-            console.log('STEP: Budget:', budget);
-
-            const products = await page.evaluate(() => {
+            if (!budget || isNaN(budget)) {
+                return { success: false, error: 'Budget is required. Please enter a valid budget.' };
+            }
+            
+            const searchUrl = `https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`;
+            console.log('[Agent] Navigating to search:', searchUrl);
+            await p.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await new Promise(res => setTimeout(res, 3000));
+            
+            const products = await p.evaluate(() => {
                 const cards = Array.from(document.querySelectorAll('[data-component-type="s-search-result"]'));
-                return cards.slice(0, 10).map(card => {
+                return cards.slice(0, 15).map(card => {
                     const linkEl = card.querySelector('h2 a[href*="/dp/"]') || card.querySelector('a[href*="/dp/"]');
                     const priceEl = card.querySelector('.a-price .a-offscreen');
                     const imgEl = card.querySelector('img.s-image');
                     const titleEl = card.querySelector('h2 span');
                     const ratingEl = card.querySelector('.a-icon-star-small span, .a-icon-star span');
-                    const reviewEl = card.querySelector('[aria-label*="stars"] + span, .a-size-base.s-underline-text');
-                    if (!linkEl) return null;
+                    const reviewEl = card.querySelector('.a-size-base.s-underline-text');
+                    if (!linkEl || !linkEl.href) return null;
                     let price = null;
                     if (priceEl) {
                         const cleaned = priceEl.textContent.replace(/[₹,\s]/g, '').trim();
@@ -847,55 +838,43 @@ async function executeAgentAction(action) {
                         price,
                         title: titleEl?.textContent?.trim() || '',
                         image: imgEl?.src || '',
-                        rating: ratingEl?.textContent?.trim() || '',
+                        rating: ratingEl?.textContent?.trim() || 'N/A',
                         reviews: reviewEl?.textContent?.trim() || ''
                     };
                 }).filter(Boolean);
             });
-
-            console.log('STEP: Products found:', products.length);
-            products.forEach(p => console.log(`  ₹${p.price} - ${p.title?.slice(0,40)}`));
-
-            if (!products.length) return { success: false, error: 'No products found' };
-
-            // Budget logic: find items closest to budget from below
-            let candidates = [];
-            if (budget && !isNaN(budget)) {
-                const filteredProducts = products
-                    .filter(p => p.price !== null && p.price <= budget)
-                    .sort((a, b) => b.price - a.price);
-
-                if (!filteredProducts.length) {
-                    global.mainWindowRef?.webContents?.send("add-message", {
-                        type: "system",
-                        text: "No products within your budget"
-                    });
-                    const cheapest = products.filter(p => p.price !== null).sort((a,b) => a.price - b.price)[0];
-                    return { 
-                        success: false, budgetExceeded: true,
-                        cheapestAvailable: cheapest?.price,
-                        cheapestTitle: cheapest?.title?.slice(0,50),
-                        originalBudget: budget,
-                        error: `No products within ₹${budget}`
-                    };
-                }
-                candidates = filteredProducts;
-            } else {
-                candidates = products;
+            
+            console.log('[Agent] Total products found:', products.length);
+            products.forEach(prod => console.log(`  ₹${prod.price} - ${prod.title?.slice(0,40)}`));
+            
+            // STRICT budget filter
+            const withinBudget = products
+                .filter(prod => prod.price !== null && prod.price <= budget)
+                .sort((a, b) => b.price - a.price); // closest to budget first
+            
+            console.log('[Agent] Products within budget ₹', budget, ':', withinBudget.length);
+            
+            if (withinBudget.length === 0) {
+                const cheapest = products.filter(prod => prod.price !== null).sort((a,b) => a.price - b.price)[0];
+                agentState = 'idle';
+                return {
+                    success: false,
+                    budgetExceeded: true,
+                    cheapestAvailable: cheapest?.price || null,
+                    cheapestTitle: cheapest?.title?.slice(0, 50) || null,
+                    originalBudget: budget,
+                    error: `No products found within ₹${budget}`
+                };
             }
-
-            console.log('STEP: Candidates for approval:', candidates.length);
-            // Return top 5 candidates for user to browse
-            return { 
-                success: true, 
-                products: candidates.slice(0, 5).map(p => ({
-                    url: p.url,
-                    price: p.price,
-                    title: p.title,
-                    image: p.image,
-                    rating: p.rating,
-                    reviews: p.reviews
-                }))
+            
+            agentState = 'selecting_product';
+            agentProducts = withinBudget.slice(0, 5);
+            agentCurrentProductIndex = 0;
+            
+            return {
+                success: true,
+                products: agentProducts,
+                totalFound: withinBudget.length
             };
         }
 
@@ -910,19 +889,33 @@ async function executeAgentAction(action) {
 
         // ── STEP 5: Add to cart AFTER user approval ─────────────────────────
         if (action.type === 'amazon_add_to_cart') {
-            console.log('STEP: Opening product:', action.url);
-            await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            console.log('[Agent] STEP 3: Adding to cart:', action.url);
+            const p = global.activePage;
+            if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
+            if (!action.url) return { success: false, error: 'Invalid product URL' };
+            
+            await p.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await new Promise(res => setTimeout(res, 2000));
-            console.log('STEP: Product page loaded');
-
+            
             try {
-                await page.waitForSelector('#add-to-cart-button', { timeout: 10000 });
-                await page.click('#add-to-cart-button');
+                await p.waitForSelector('#add-to-cart-button', { timeout: 10000 });
+                await p.click('#add-to-cart-button');
                 await new Promise(res => setTimeout(res, 2000));
-                console.log('STEP: Added to cart');
+                console.log('[Agent] Added to cart successfully');
+                agentState = 'checkout';
                 return { success: true, addedToCart: true };
-            } catch(err) {
-                return { success: false, error: 'Add to cart failed: ' + err.message };
+            } catch (err) {
+                // Fallback
+                const clicked = await p.evaluate(() => {
+                    const btn = document.querySelector('#add-to-cart-button') ||
+                        Array.from(document.querySelectorAll('button,input[type="submit"]'))
+                            .find(b => (b.value || b.textContent || '').toLowerCase().includes('add to cart'));
+                    if (btn) { btn.click(); return true; }
+                    return false;
+                });
+                if (!clicked) return { success: false, error: 'Add to cart button not found' };
+                agentState = 'checkout';
+                return { success: true, addedToCart: true };
             }
         }
 
@@ -994,38 +987,51 @@ async function executeAgentAction(action) {
 
         // ── Checkout / poll steps (operate on existing page, return directly) ──
         if (action.type === 'amazon_goto_checkout') {
-            console.log('STEP: Going to cart');
-            await page.goto('https://www.amazon.in/gp/cart/view.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            console.log('[Agent] STEP 4: Going to checkout');
+            const p = global.activePage;
+            if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
+            
+            const cartUrl = 'https://www.amazon.in/gp/cart/view.html';
+            await p.goto(cartUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await new Promise(res => setTimeout(res, 3000));
-            console.log('STEP: Cart loaded');
-
-            const selector = 'input[name="proceedToRetailCheckout"], #sc-buy-box-ptc-button input, #sc-buy-box-ptc-button';
-            try {
-                await page.waitForSelector(selector, { timeout: 10000 });
-                console.log('STEP: Clicking Proceed to Buy');
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }),
-                    page.click(selector)
-                ]);
-            } catch {
-                const clicked = await page.evaluate(() => {
+            console.log('[Agent] Cart loaded');
+            
+            // Try clicking Proceed to Buy
+            const selectors = [
+                'input[name="proceedToRetailCheckout"]',
+                '#sc-buy-box-ptc-button',
+                '#sc-buy-box-ptc-button input'
+            ];
+            
+            let clicked = false;
+            for (const sel of selectors) {
+                try {
+                    const el = await p.$(sel);
+                    if (el) {
+                        await Promise.all([
+                            p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {}),
+                            el.click()
+                        ]);
+                        clicked = true;
+                        console.log('[Agent] Clicked Proceed to Buy with:', sel);
+                        break;
+                    }
+                } catch {}
+            }
+            
+            if (!clicked) {
+                clicked = await p.evaluate(() => {
                     const el = Array.from(document.querySelectorAll('input,button,a'))
                         .find(e => (e.value || e.textContent || '').includes('Proceed to Buy'));
                     if (el) { el.click(); return true; }
                     return false;
                 });
-                if (clicked) await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+                if (clicked) await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
             }
-
-            const url = page.url();
-            console.log('STEP: Post-checkout URL:', url);
+            
+            const url = p.url();
+            console.log('[Agent] After checkout click URL:', url);
             const needsLogin = url.includes('signin') || url.includes('ap/');
-            const onCheckout = url.includes('checkout') || url.includes('buy') || url.includes('order');
-
-            if (!needsLogin && !onCheckout) {
-                return { success: false, error: 'Could not reach checkout. URL: ' + url };
-            }
-
             return { success: true, needsLogin, currentUrl: url };
         }
 
@@ -1122,291 +1128,128 @@ async function executeAgentAction(action) {
         }
 
         if (action.type === 'amazon_select_payment') {
-            try {
-                // Guard: do not proceed if still on login page
-                const currentUrl = page.url();
-                if (currentUrl.includes('signin') || currentUrl.includes('ap/')) {
-                    console.log('[Agent] Payment step blocked — still on login page:', currentUrl);
-                    return { success: false, requireLogin: true, error: 'Cannot select payment before login.' };
-                }
-
-                console.log('[Agent] Selecting payment method:', action.method);
-                await page.waitForSelector('.payment-method, #pmts-form, .a-section', { timeout: 15000 }).catch(() => {});
-                const { method } = action;
-                
-                const selected = await page.evaluate((method) => {
-                    const labels = Array.from(document.querySelectorAll('label, span, div, input'));
-                    const termMap = {
-                        cod: ['Cash on Delivery', 'Pay on Delivery', 'POD'],
-                        upi: ['UPI', 'Net Banking/UPI'],
-                        card: ['Credit', 'Debit', 'Credit/Debit'],
-                        netbanking: ['Net Banking', 'NetBanking'],
-                        amazonpay: ['Amazon Pay'],
-                    };
-                    const terms = termMap[method] || [];
-                    
-                    // Find the label or input that contains the text
-                    for (const term of terms) {
-                        const el = labels.find(l => l.textContent.includes(term));
-                        if (el) {
-                            el.scrollIntoView({ block: 'center' });
-                            el.click();
-                            return term;
-                        }
-                    }
-                    return null;
-                }, method);
-
-                console.log('[Agent] Payment selection result:', selected);
-
-                if (method === 'upi' && action.upiId) {
-                    console.log('[Agent] Entering UPI ID...');
-                    await page.waitForSelector('input[placeholder*="UPI"], input[name*="upi"]', { timeout: 8000 }).catch(() => {});
-                    const upiInputs = await page.$$('input[placeholder*="UPI"], input[name*="upi"]');
-                    if (upiInputs.length > 0) {
-                        await upiInputs[0].type(action.upiId, { delay: 50 });
-                    }
-                }
-
-                console.log('[Agent] Clicking Continue...');
-                await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a, span'));
-                    const cont = btns.find(b => {
-                        const t = (b.textContent || b.getAttribute?.('value') || '').toLowerCase();
-                        return t.includes('use this payment') || t.includes('continue') || t.includes('use this method');
-                    });
-                    if (cont) {
-                        cont.scrollIntoView({ block: 'center' });
-                        cont.click();
-                    }
-                });
-                
-                await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-                
-                // After payment selected — bring Electron window to front
-                if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
-                    global.mainWindowRef.show();
-                    global.mainWindowRef.focus();
-                    global.mainWindowRef.setAlwaysOnTop(true);
-                    setTimeout(() => {
-                        if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
-                            global.mainWindowRef.setAlwaysOnTop(false);
-                        }
-                    }, 2000);
-                }
-                return { success: true, paymentSelected: method, awaitOrderApproval: true };
-            } catch (err) { 
-                console.error('[Agent] Payment selection error:', err.message);
-                return { success: false, error: err.message }; 
+            console.log('[Agent] STEP 5: Selecting payment:', action.method);
+            agentState = 'payment';
+            const p = global.activePage;
+            if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
+            
+            const url = p.url();
+            if (url.includes('signin') || url.includes('ap/')) {
+                return { success: false, error: 'Still on login page. Please complete login first.' };
             }
+            
+            await new Promise(res => setTimeout(res, 2000));
+            
+            const termMap = {
+                cod: ['Cash on Delivery', 'Pay on Delivery'],
+                upi: ['UPI', 'BHIM'],
+                card: ['Credit', 'Debit', 'Credit/Debit'],
+                netbanking: ['Net Banking', 'NetBanking'],
+                amazonpay: ['Amazon Pay']
+            };
+            
+            const terms = termMap[action.method] || [];
+            await p.evaluate((terms) => {
+                const all = Array.from(document.querySelectorAll('label, div, span, input'));
+                for (const term of terms) {
+                    const el = all.find(e => (e.textContent || '').includes(term));
+                    if (el) { el.scrollIntoView({ block: 'center' }); el.click(); return term; }
+                }
+                return null;
+            }, terms);
+            
+            await new Promise(res => setTimeout(res, 1000));
+            
+            // Click Continue
+            await p.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button,input[type="submit"],a'));
+                const cont = btns.find(b => {
+                    const t = (b.textContent || b.value || '').toLowerCase();
+                    return t.includes('use this payment') || t.includes('continue') || t.includes('use this method');
+                });
+                if (cont) { cont.scrollIntoView({ block: 'center' }); cont.click(); }
+            });
+            
+            await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            
+            // Bring Electron window to front
+            if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
+                global.mainWindowRef.show();
+                global.mainWindowRef.focus();
+                global.mainWindowRef.setAlwaysOnTop(true);
+                setTimeout(() => { global.mainWindowRef?.setAlwaysOnTop(false); }, 2000);
+            }
+            
+            agentState = 'awaiting_approval';
+            return { success: true, paymentSelected: action.method };
         }
 
         if (action.type === 'amazon_place_order') {
-            console.log('STEP: Placing order');
-            const page = global.activePage;
-            if (!page || page.isClosed()) return { success: false, error: 'No active browser session' };
-
-            // Scroll down to find button
-            await page.evaluate(() => window.scrollBy(0, 300));
+            console.log('[Agent] STEP 6: Placing order');
+            agentState = 'placing_order';
+            const p = global.activePage;
+            if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
+            
+            await p.evaluate(() => window.scrollBy(0, 400));
             await new Promise(res => setTimeout(res, 1500));
-
-            // Try multiple selectors
-            const selectors = [
+            
+            const orderSelectors = [
                 '#submitOrderButtonId',
                 'input[name="placeYourOrder1"]',
-                'input[name="place-order"]',
                 'span[data-feature-id="place-order-button"] input',
-                'div[data-feature-id="place-order-button"] input',
-                'input[aria-labelledby*="place"]',
+                'div[data-feature-id="place-order-button"] input'
             ];
-
+            
             let clicked = false;
-            for (const sel of selectors) {
+            for (const sel of orderSelectors) {
                 try {
-                    const el = await page.$(sel);
+                    const el = await p.$(sel);
                     if (el) {
-                        console.log('STEP: Found place order button with selector:', sel);
                         await Promise.all([
-                            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {}),
+                            p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {}),
                             el.click()
                         ]);
                         clicked = true;
+                        console.log('[Agent] Clicked place order with:', sel);
                         break;
                     }
                 } catch {}
             }
-
+            
             if (!clicked) {
-                // Final fallback - find by text
-                clicked = await page.evaluate(() => {
-                    const inputs = Array.from(document.querySelectorAll('input[type="submit"], button, span.a-button-inner input'));
+                clicked = await p.evaluate(() => {
+                    const inputs = Array.from(document.querySelectorAll('input[type="submit"],button'));
                     const btn = inputs.find(el => {
-                        const val = (el.value || el.textContent || el.getAttribute('aria-label') || '').toLowerCase();
-                        return val.includes('place your order') || val.includes('place order') || val.includes('confirm order');
+                        const val = (el.value || el.textContent || '').toLowerCase();
+                        return val.includes('place your order') || val.includes('place order');
                     });
                     if (btn) { btn.click(); return true; }
                     return false;
                 });
-                if (clicked) await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+                if (clicked) await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
             }
-
-            if (!clicked) return { success: false, error: 'Place Order button not found. Please click it manually in the browser.' };
-
+            
+            if (!clicked) {
+                agentState = 'idle';
+                return { success: false, error: 'Place Order button not found. Please click it in the browser.' };
+            }
+            
             await new Promise(res => setTimeout(res, 2000));
-            const url = page.url();
-            const orderPlaced = url.includes('thankyou') || url.includes('confirmation') || url.includes('order-confirm') ||
-                await page.evaluate(() =>
+            const finalUrl = p.url();
+            const orderPlaced = finalUrl.includes('thankyou') || finalUrl.includes('confirmation') ||
+                await p.evaluate(() =>
                     document.body.innerText.includes('order has been placed') ||
                     document.body.innerText.includes('Thank you') ||
-                    document.body.innerText.includes('Order placed') ||
-                    !!document.querySelector('.a-alert-success, .order-confirmation')
+                    !!document.querySelector('.a-alert-success')
                 ).catch(() => false);
-
-            console.log('STEP: Order placed:', orderPlaced, 'URL:', url);
-            return { success: true, orderPlaced, message: orderPlaced ? 'Order placed successfully!' : 'Order submitted - check your email for confirmation!' };
-        }
-
-        // ?????? Amazon shopping flow ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
-        if (action.type === 'amazon_search') {
-            if (action.selectedProduct) {
-                // User picked from selection card — navigate directly to the product
-                console.log('[Agent] Navigating to user-selected product:', action.selectedProduct);
-                await page.goto(action.selectedProduct, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-                await new Promise(r => setTimeout(r, 2500));
-                await checkLoginBreak();
-            } else {
-                if (action.loadMoreOptions) {
-                    console.log('[Agent] Loading more options (scrolling down)...');
-                    await page.evaluate(() => window.scrollBy(0, 1500));
-                    await new Promise(r => setTimeout(r, 2000));
-                } else {
-                    // First search: navigate to Amazon and search
-                    console.log('[Agent] Searching Amazon for:', action.query, '| budget:', action.budget);
-                    await page.goto('https://www.amazon.in', { waitUntil: 'networkidle2' });
-                    await page.waitForSelector("input[name='field-keywords']", { timeout: 8000 });
-                    await page.type("input[name='field-keywords']", action.query, { delay: 60 });
-                    await page.keyboard.press('Enter');
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-                    console.log('[Agent] Amazon search done, now on:', page.url());
-                    await Promise.race([
-                        page.waitForSelector('[data-component-type="s-search-result"]', { timeout: 8000 }),
-                        page.waitForSelector('.s-main-slot', { timeout: 8000 }),
-                    ]).catch(() => {});
-                    await new Promise(r => setTimeout(r, 1500));
-                    await checkLoginBreak();
-                }
-
-                // Extract all products from search results
-                const products = await page.evaluate(() => {
-                    const cards = document.querySelectorAll('[data-component-type="s-search-result"], .s-result-item[data-asin]');
-                    const results = [];
-                    cards.forEach(card => {
-                        // Price selectors
-                        const priceEl = card.querySelector('.a-price .a-offscreen') ||
-                                        card.querySelector('.a-price-whole') ||
-                                        card.querySelector('[data-a-color="price"] .a-offscreen') ||
-                                        card.querySelector('.a-color-price');
-
-                        // Link selectors
-                        const linkEl = card.querySelector('h2 a[href*="/dp/"]') ||
-                                       card.querySelector('a[href*="/dp/"]') ||
-                                       card.querySelector('a.a-link-normal[href*="/dp/"]');
-                                       
-                        const ratingEl = card.querySelector('.a-icon-alt') || 
-                                         card.querySelector('[aria-label*="out of 5 stars"]');
-
-                        if (!linkEl || !linkEl.href) return;
-
-                        let price = null;
-                        if (priceEl) {
-                            const priceText = priceEl.textContent.replace(/[₹,\s\u20B9]/g, '').trim();
-                            const parsed = parseFloat(priceText);
-                            if (!isNaN(parsed)) price = parsed;
-                        }
-
-                        let rating = 0;
-                        if (ratingEl) {
-                            const text = ratingEl.getAttribute('aria-label') || ratingEl.textContent;
-                            const m = text.match(/([\d.]+)\s*out of/);
-                            if (m) rating = parseFloat(m[1]);
-                            else { const p = parseFloat(text); if (!isNaN(p)) rating = p; }
-                        }
-
-                        results.push({
-                            url: linkEl.href,
-                            price,
-                            rating,
-                            title: card.querySelector('h2, .a-size-medium, .a-size-base-plus')?.textContent?.trim() || 'Product'
-                        });
-                    });
-                    return results;
-                });
-
-                console.log('[Agent] Products extracted:', products.length);
-
-                const budget = action.budget ? parseFloat(action.budget) : null;
-                if (budget && !isNaN(budget)) {
-                    const validProducts = products.filter(p => p.price !== null && p.price <= budget);
-                    if (validProducts.length === 0) {
-                        const priced = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price);
-                        return {
-                            success: false,
-                            budgetExceeded: true,
-                            cheapestAvailable: priced[0]?.price ?? null,
-                            cheapestTitle: priced[0]?.title?.slice(0, 50) ?? null,
-                            originalBudget: budget,
-                            error: 'No products found within \u20B9' + budget
-                        };
-                    }
-                    // Sort by price closest to budget, then by rating
-                    validProducts.sort((a, b) => b.price !== a.price ? b.price - a.price : b.rating - a.rating);
-                    console.log('[Agent] Presenting', Math.min(validProducts.length, 5), 'options to user');
-                    if (!validProducts.length) {
-                        return {
-                            success: false,
-                            error: 'No valid products found within budget'
-                        };
-                    }
-                    return {
-                        success: true,
-                        options: validProducts.slice(0, 5)
-                    };
-                } else {
-                    // No budget — auto pick first product
-                    const pick = products.find(p => p.url);
-                    if (!pick) return { success: false, error: 'No products found on this page.' };
-                    console.log('[Agent] No budget — picking first product:', pick.title.slice(0, 40));
-                    await page.goto(pick.url, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 2500));
-                    await checkLoginBreak();
-                }
-            }
-
-            // Add to cart (runs for: selectedProduct path + no-budget auto-pick path)
-            console.log('[Agent] On product page:', page.url());
-            const cartClicked = await page.evaluate(() => {
-                const addToCartInput = document.querySelector('#add-to-cart-button');
-                if (addToCartInput && addToCartInput.offsetWidth > 0) {
-                    addToCartInput.scrollIntoView({ block: 'center' });
-                    addToCartInput.click();
-                    return '#add-to-cart-button';
-                }
-                const els = Array.from(document.querySelectorAll('input[type="submit"], button'));
-                for (const el of els) {
-                    const text = (el.value || el.innerText || '').toLowerCase();
-                    if ((text.includes('add to cart') || text.includes('add to basket')) && el.offsetWidth > 0) {
-                        el.scrollIntoView({ block: 'center' });
-                        el.click();
-                        return 'fallback:' + text.slice(0, 30);
-                    }
-                }
-                return null;
-            });
-            console.log('[Agent] Add to Cart result:', cartClicked);
-            if (!cartClicked) return { success: false, error: 'Could not find Add to Cart button on product page.' };
-            await new Promise(r => setTimeout(r, 2500));
-            await checkLoginBreak();
-            return { success: true, message: 'Added to cart!' };
+            
+            agentState = 'idle';
+            console.log('[Agent] Order placed:', orderPlaced, '| URL:', finalUrl);
+            return { 
+                success: true, 
+                orderPlaced,
+                message: orderPlaced ? '🎉 Order placed successfully!' : 'Order submitted — check your email!'
+            };
         }
 
         // ── Flipkart ──────────────────────────────────────────────────────────
@@ -1643,7 +1486,7 @@ async function executeMinimalAgentAction(action) {
         action.query = "";
     }
 
-    const page = await ensureActiveBrowserPage();
+    const page = await getBrowserPage();
 
     let productUrl = action.selectedProduct || null;
     const budget = action.budget ? parseInt(action.budget, 10) : null;
@@ -1883,6 +1726,10 @@ async function createWindow() {
 
         mainWindow.webContents.on("console-message", (_, level, message, line, sourceId) => {
             console.log(`[Renderer:${level}] ${message} (${sourceId}:${line})`);
+        });
+
+        mainWindow.webContents.on('crashed', (event, killed) => {
+            console.error('[Buddy] Renderer crashed! killed:', killed);
         });
 
         mainWindow.webContents.on("render-process-gone", (_, details) => {
@@ -2171,8 +2018,175 @@ function handleCommand(command, event) {
     console.log("No app matched for:", lower);
 }
 
+// ==== STRICT AMAZON FLOW ====
+let globalBudget = 0;
+ipcMain.on("set-budget", (_, budget) => {
+    globalBudget = Number(budget);
+});
+
+function waitForLogin(page) {
+    return page.waitForFunction(() => {
+        return document.querySelector("#nav-link-accountList span") !== null;
+    }, { timeout: 0 });
+}
+
+ipcMain.on("start-login-watch", async (event) => {
+    try {
+        if (!global.activePage) global.activePage = await getBrowserPage();
+        await waitForLogin(global.activePage);
+        event.sender.send("add-message", { role: 'buddy', text: 'Login Detected! Proceeding...' });
+        ipcMain.emit("login-success-internal");
+    } catch(err) {
+        console.error("Login watch err", err);
+    }
+});
+
+ipcMain.on("start-strict-amazon-flow", async (event, query) => {
+    try {
+        const page = await getBrowserPage();
+        global.activePage = page;
+        
+        // STEP 2
+        if (global.mainWindowRef) {
+            global.mainWindowRef.show();
+            global.mainWindowRef.focus();
+            global.mainWindowRef.webContents.send("show-login-popup");
+        }
+        await page.goto("https://www.amazon.in", { waitUntil: 'domcontentloaded' });
+
+        await new Promise(resolve => ipcMain.once("login-success-internal", resolve));
+
+        // STEP 4
+        await page.goto("https://www.amazon.in/s?k=" + encodeURIComponent(query), { waitUntil: 'domcontentloaded' });
+
+        // STEP 5
+        const products = await page.evaluate(() => {
+            const items = [...document.querySelectorAll("[data-component-type='s-search-result']")];
+            return items.slice(0, 10).map(el => {
+                const priceText = el.querySelector(".a-price-whole")?.innerText?.replace(/,/g, "");
+                const title = el.querySelector("h2 span")?.innerText;
+                const rating = el.querySelector(".a-icon-alt")?.innerText;
+                const link = el.querySelector("h2 a")?.href;
+                return {
+                    title,
+                    price: Number(priceText),
+                    rating: parseFloat(rating) || 0,
+                    url: link
+                };
+            }).filter(p => p.title && !isNaN(p.price));
+        });
+
+        // STEP 6
+        function getSmartProducts(products, budget) {
+            const min = budget * 0.9;
+            let filtered = products.filter(p => p.price >= min && p.price <= budget);
+            if (!filtered.length) {
+                filtered = products.filter(p => p.price <= budget);
+            }
+            return filtered.sort((a, b) => b.rating - a.rating).slice(0, 5);
+        }
+        
+        const selectedProducts = getSmartProducts(products, globalBudget);
+        if(!selectedProducts.length) {
+             if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: "No products found within budget." });
+             return;
+        }
+
+        let chosenProduct = null;
+        for (const product of selectedProducts) {
+            if (global.mainWindowRef) {
+                global.mainWindowRef.show();
+                global.mainWindowRef.focus();
+                global.mainWindowRef.webContents.send("show-product", product);
+            }
+
+            const decision = await new Promise(resolve => {
+                ipcMain.once("product-decision", (_, d) => resolve(d));
+            });
+
+            if (decision === "BUY") {
+                chosenProduct = product;
+                break;
+            }
+        }
+
+        if (!chosenProduct) {
+             if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: "All products skipped. Flow terminated." });
+             return;
+        }
+
+        if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: "Proceeding to product..." });
+
+        // STEP 8
+        await page.goto(chosenProduct.url, { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector("#add-to-cart-button", { timeout: 15000 });
+        await page.click("#add-to-cart-button");
+        await new Promise(r => setTimeout(r, 2000));
+        
+        await page.goto("https://www.amazon.in/checkout", { waitUntil: 'domcontentloaded' });
+
+        // STEP 9
+        if (global.mainWindowRef) {
+            global.mainWindowRef.show();
+            global.mainWindowRef.focus();
+            global.mainWindowRef.webContents.send("ask-payment");
+        }
+
+        const payment = await new Promise(resolve => ipcMain.once("payment-selected", (_, m) => resolve(m)));
+
+        // STEP 10
+        if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: "Processing " + payment + " payment..." });
+
+        if (payment === "COD") {
+            await page.evaluate(() => {
+                const cod = document.querySelector("input[value='COD']") || document.querySelector("input[type='radio'][value*='Cash']");
+                if (cod) cod.click();
+            });
+            await new Promise(r => setTimeout(r, 1500));
+            await page.evaluate(() => {
+                const useBtn = document.querySelector("input[name*='Continue']");
+                if (useBtn) useBtn.click();
+            });
+        }
+
+        await new Promise(r => setTimeout(r, 4000));
+
+        // STEP 11
+        if (global.mainWindowRef) {
+            global.mainWindowRef.show();
+            global.mainWindowRef.focus();
+            global.mainWindowRef.webContents.send("final-approval");
+        }
+
+        const confirmAction = await new Promise(resolve => ipcMain.once("confirm-order", (_, d) => resolve(d)));
+        if (confirmAction !== "CONFIRM") {
+             if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: "Order cancelled by user."});
+             return;
+        }
+
+        // STEP 12
+        await page.waitForSelector("input[name='placeYourOrder1'], #placeYourOrder", { timeout: 15000 });
+        await page.evaluate(() => {
+            const btn = document.querySelector("input[name='placeYourOrder1']") || document.querySelector("#placeYourOrder");
+            if (btn) btn.click();
+        });
+
+        if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: '✅ Order Placed Successfully!' });
+
+    } catch(err) {
+        if (global.mainWindowRef) global.mainWindowRef.webContents.send("add-message", { role: 'buddy', text: 'Error in strict flow: ' + err.message });
+        console.error("Strict Flow Error:", err);
+    }
+});
+// ==== END STRICT AMAZON FLOW ====
+
 ipcMain.on("buddy-command", (event, command) => {
     handleCommand(command, event);
+});
+
+ipcMain.on("start-automation", async () => {
+    const page = await getBrowserPage();
+    await page.goto("https://www.amazon.in");
 });
 
 ipcMain.on("close-app", () => {
@@ -2195,8 +2209,6 @@ ipcMain.handle('execute-agent', async (event, action) => {
 ipcMain.handle('agent-checkout-step', async (event, action) => {
     console.log('[Agent] checkout-step called with type:', action?.type);
     try {
-        if (!global.activePage) return { success: false, error: 'No active browser session' };
-        action.page = global.activePage;
         const result = await executeAgentAction(action);
         console.log('[Agent] Checkout step result:', JSON.stringify(result));
         return result;

@@ -4,8 +4,8 @@ console.log("Buddy preload bridge loaded")
 contextBridge.exposeInMainWorld("electronAPI", {
     sendBuddyCommand: (command) => ipcRenderer.send("buddy-command", command),
     closeApp: () => ipcRenderer.send("close-app"),
-    onAgentApproval: (callback) => ipcRenderer.on("agent-approval", callback),
-    removeAgentApproval: (callback) => ipcRenderer.removeListener("agent-approval", callback)
+    onAgentApproval: (cb) => ipcRenderer.on("agent-approval", (_, data) => cb(_, data)),
+    removeAgentApproval: (cb) => ipcRenderer.removeListener("agent-approval", cb)
 })
 
 contextBridge.exposeInMainWorld("buddyAPI", {

@@ -1063,6 +1063,10 @@ const AgentAwaitAddressCard = React.memo(({ platform, paymentInfo, onAddressDete
 });
 
 const AgentAwaitLoginCard = React.memo(({ platform, isFirstLogin = false, paymentInfo, onLoginDetected, onCancel }) => {
+    if (!platform || !onLoginDetected) {
+        console.error('[Buddy] AgentAwaitLoginCard missing required props', { platform, onLoginDetected });
+        return null;
+    }
     const [polling, setPolling] = useState(false);
     const [detected, setDetected] = useState(false);
     const pollRef = useRef(null);
@@ -1279,8 +1283,15 @@ const AgentPreCheckoutCard = React.memo(({ platform, onSubmit, onCancel }) => {
 });
 
 const ProductApprovalCard = React.memo(({ products, currentIndex, onApprove, onSkip, onCancel }) => {
-    const product = products?.[currentIndex];
-    if (!product) return null;
+    const safeIndex = Math.min(currentIndex || 0, (products?.length || 1) - 1);
+    const product = products?.[safeIndex];
+    if (!product) {
+        return (
+            <div style={{ padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                No more products to show.
+            </div>
+        );
+    }
     return (
         <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
             <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
@@ -1632,7 +1643,12 @@ const AgentRebudgetCard = React.memo(({ action, originalBudget, cheapestAvailabl
 
 // Separate component so it has its own state — cannot use useState inside useMemo
 const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAction }) => {
+    const action = msg?.action;
     const [budget, setBudget] = useState('');
+    if (!action) {
+        console.error('[Buddy] AgentConfirmCard missing action prop', msg);
+        return null;
+    }
     return (
         <div className="message-enter" style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
             <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
@@ -1647,10 +1663,10 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
                 <div style={{ padding: '10px 14px 8px' }}>
                     <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: '0 0 6px' }}>Here&apos;s what I&apos;ll do:</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.07)', marginBottom: 10 }}>
-                        <span style={{ fontSize: 18 }}>{msg.action.emoji}</span>
+                        <span style={{ fontSize: 18 }}>{action.emoji}</span>
                         <div>
-                            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 500, margin: 0 }}>{msg.action.platform}</p>
-                            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: 0 }}>{msg.action.description}</p>
+                            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 500, margin: 0 }}>{action.platform}</p>
+                            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: 0 }}>{action.description}</p>
                         </div>
                     </div>
 
@@ -1837,11 +1853,137 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
     const [settingsOpen, setSettingsOpen] = useState(false);
     const safeMessages = Array.isArray(messages) ? messages : [];
 
-    const messageList = useMemo(() => safeMessages.map((msg, index) => {
-        // Agent confirmation card
-        if (msg.role === 'agent-confirm') {
-            return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
-        }
+    const messageList = useMemo(() => {
+        try {
+            return safeMessages.map((msg, index) => {
+                if (msg.role === 'agent-budget') {
+                    const action = msg.agentAction;
+                    return (
+                        <div key={index} style={{ padding: 12, borderRadius: 12, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' }}>
+                            <p style={{ color: 'white', marginBottom: 8 }}>Enter your budget for {action?.query}:</p>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <input id={`budget-${index}`} type="number" placeholder="₹" style={{ padding: '6px 12px', borderRadius: 6, background: '#1e1e28', color: 'white', border: '1px solid #333', flex: 1, outline: 'none' }} />
+                                <button onClick={async () => {
+                                    const val = document.getElementById(`budget-${index}`).value;
+                                    if(val) {
+                                        setMessages(p => p.map((m, i) => i === index ? { role: 'buddy', text: `Budget set to ₹${val}. Opening Amazon...` } : m));
+                                        const res = await window.buddyAgent.execute({ type: 'amazon_login_goto' });
+                                        if (res.alreadyLoggedIn) {
+                                            setMessages(p => [...p, { role: 'buddy', text: `Searching for ${action.query}...`, timestamp: Date.now() }]);
+                                            const sRes = await window.buddyAgent.execute({ type: 'amazon_search', query: action.query, budget: val });
+                                            if (sRes.success && sRes.products?.length > 0) {
+                                                setMessages(p => [...p, { role: 'agent-product-approval', action, budget: val, products: sRes.products, currentIndex: 0, timestamp: Date.now() }]);
+                                            } else {
+                                                setMessages(p => [...p, { role: 'buddy', text: 'No products found within budget.', timestamp: Date.now() }]);
+                                            }
+                                        } else {
+                                            setMessages(p => [...p, { role: 'agent-await-login', action, budget: val, timestamp: Date.now() }]);
+                                        }
+                                    }
+                                }} style={{ padding: '6px 12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>Set</button>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (msg.role === 'agent-await-login') {
+                    return (
+                        <div key={index} style={{ padding: 12, borderRadius: 12, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' }}>
+                            <p style={{ color: 'white', marginBottom: 8 }}>Amazon login opened. Please log in using the browser window.</p>
+                            <button onClick={async () => {
+                                setMessages(p => [...p, { role: 'buddy', text: 'Verifying login...', timestamp: Date.now() }]);
+                                const res = await window.buddyAgent.execute({ type: 'amazon_poll_login' });
+                                if (res.isLoggedIn || res.alreadyLoggedIn) {
+                                    setMessages(p => p.map((m, i) => i === index ? { role: 'buddy', text: `Login verified! Searching for ${msg.action.query}...` } : m));
+                                    const sRes = await window.buddyAgent.execute({ type: 'amazon_search', query: msg.action.query, budget: msg.budget });
+                                    if (sRes.success && sRes.products?.length > 0) {
+                                        setMessages(p => [...p, { role: 'agent-product-approval', action: msg.action, budget: msg.budget, products: sRes.products, currentIndex: 0, timestamp: Date.now() }]);
+                                    } else {
+                                        setMessages(p => [...p, { role: 'buddy', text: 'No products found.', timestamp: Date.now() }]);
+                                    }
+                                }
+                            }} style={{ padding: '6px 12px', background: '#eab308', color: 'black', fontWeight: 'bold', border: 'none', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>I've logged in</span>
+                            </button>
+                        </div>
+                    );
+                }
+
+                if (msg.role === 'agent-product-approval') {
+                    const p = msg.products?.[msg.currentIndex];
+                    if (!p) return null;
+                    return (
+                        <div key={index} style={{ padding: 16, borderRadius: 12, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <p style={{ color: 'white', fontWeight: 'bold', margin: 0, fontSize: '14px', lineHeight: 1.3 }}>{p.title?.slice(0, 80)}...</p>
+                                <p style={{ color: '#bbb', margin: 0, fontSize: '13px' }}>Price: <strong style={{color: '#10b981'}}>₹{p.price}</strong> | Rating: {p.rating}★</p>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                    <button onClick={async () => {
+                                        setMessages(pr => pr.map((m, i) => i === index ? { role: 'buddy', text: `✅ Buying ${p.title.slice(0, 20)}...` } : m));
+                                        const res = await window.buddyAgent.execute({ type: 'amazon_add_to_cart', url: p.url });
+                                        if (res.addedToCart) {
+                                            const ck = await window.buddyAgent.execute({ type: 'amazon_goto_checkout' });
+                                            if (ck.success) {
+                                                setMessages(pr => [...pr, { role: 'agent-payment', action: msg.action, timestamp: Date.now() }]);
+                                            } else {
+                                                setMessages(pr => [...pr, { role: 'buddy', text: `Failed to open checkout: ${ck.error}` }]);
+                                            }
+                                        }
+                                    }} style={{ flex: 1, padding: '8px', background: '#10b981', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold' }}>🛒 BUY THIS</button>
+                                    <button onClick={() => {
+                                        if (msg.currentIndex + 1 < msg.products.length) {
+                                            setMessages(pr => pr.map((m, i) => i === index ? { ...m, currentIndex: msg.currentIndex + 1 } : m));
+                                        } else {
+                                            setMessages(pr => pr.map((m, i) => i === index ? { role: 'buddy', text: 'Skipped all options.' } : m));
+                                        }
+                                    }} style={{ flex: 1, padding: '8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold' }}>⏭️ SKIP</button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (msg.role === 'agent-payment') {
+                    return (
+                        <div key={index} style={{ padding: 16, borderRadius: 12, background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' }}>
+                            <p style={{ color: 'white', margin: '0 0 12px 0', fontWeight: 'bold' }}>Select Payment Method:</p>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                {['cod', 'upi', 'card'].map(m => (
+                                    <button key={m} onClick={async () => {
+                                        setMessages(pr => pr.map((ms, i) => i === index ? { role: 'buddy', text: `Selecting payment: ${m.toUpperCase()}...` } : ms));
+                                        const res = await window.buddyAgent.execute({ type: 'amazon_select_payment', method: m });
+                                        if (res.success) {
+                                            setMessages(pr => [...pr, { role: 'agent-final-approval', timestamp: Date.now() }]);
+                                        } else {
+                                            setMessages(pr => [...pr, { role: 'buddy', text: `Failed to select payment: ${res.error}` }]);
+                                        }
+                                    }} style={{ flex: 1, padding: '10px 4px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', textTransform: 'uppercase' }}>{m}</button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (msg.role === 'agent-final-approval') {
+                    return (
+                        <div key={index} style={{ padding: 16, borderRadius: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' }}>
+                            <p style={{ color: 'white', margin: '0 0 12px 0', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>Final Approval Required</span>
+                            </p>
+                            <p style={{ color: '#bbb', fontSize: 13, margin: '0 0 12px 0' }}>The order is ready to be placed on Amazon.</p>
+                            <button onClick={async () => {
+                                setMessages(pr => pr.map((ms, i) => i === index ? { role: 'buddy', text: 'Placing order... Please wait...' } : ms));
+                                const res = await window.buddyAgent.execute({ type: 'amazon_place_order' });
+                                setMessages(pr => [...pr, { role: 'buddy', text: res.message || res.error }]);
+                            }} style={{ width: '100%', padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold' }}>PLACE ORDER NOW</button>
+                        </div>
+                    );
+                }
+
+                // Agent confirmation card
+                if (msg.role === 'agent-confirm') {
+                    return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
+                }
 
         // Agent rebudget card — shown when no item within original budget
         if (msg.role === 'agent-rebudget') {
@@ -2529,7 +2671,16 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                 </div>
             </div>
         );
-    }), [safeMessages, setMessages, setPendingAgentAction, setChatOpen, setSidebarVisible]);
+            });
+        } catch (err) {
+            console.error('[Buddy] Message render error:', err, safeMessages);
+            return [
+                <div key="message-render-error" style={{ padding: '12px', borderRadius: 12, background: 'rgba(239,68,68,0.12)', border: '0.5px solid rgba(239,68,68,0.3)', color: 'rgba(255,204,204,0.95)', fontSize: 13 }}>
+                    ⚠️ Display error — check console for details.
+                </div>
+            ];
+        }
+    }, [safeMessages, setMessages, setPendingAgentAction, setChatOpen, setSidebarVisible]);
 
     return (
         <div
@@ -2933,12 +3084,25 @@ const Spotlight = React.memo(() => {
             window.focus();
         };
         
+        const sLogin = () => { setMessages(p => [...p, { role: 'strict-login-popup', timestamp: Date.now() }]); setChatOpen(true); };
+        const sProd = (prod) => { setMessages(p => [...p, { role: 'strict-show-product', product: prod, timestamp: Date.now() }]); setChatOpen(true); };
+        const sPay = () => { setMessages(p => [...p, { role: 'strict-ask-payment', timestamp: Date.now() }]); setChatOpen(true); };
+        const sConfirm = () => { setMessages(p => [...p, { role: 'strict-final-approval', timestamp: Date.now() }]); setChatOpen(true); };
+
         window.api.on("login-required", loginReqHandler);
         window.api.on("add-message", addMsgHandler);
+        window.api.on("show-login-popup", sLogin);
+        window.api.on("show-product", sProd);
+        window.api.on("ask-payment", sPay);
+        window.api.on("final-approval", sConfirm);
         
         return () => {
             window.api.removeListener("login-required", loginReqHandler);
             window.api.removeListener("add-message", addMsgHandler);
+            window.api.removeListener("show-login-popup", sLogin);
+            window.api.removeListener("show-product", sProd);
+            window.api.removeListener("ask-payment", sPay);
+            window.api.removeListener("final-approval", sConfirm);
         };
     }, []);
 
@@ -3049,19 +3213,15 @@ const Spotlight = React.memo(() => {
         const agentAction = parseAgentCommand(finalText);
         if (agentAction?.platform === 'Amazon') {
             setMessages(prev => [...prev, userMsg]);
-            addMessage(userMsg);
+            setChatOpen(true);
+            setSidebarVisible(false);
+
+            // STEP 1: Ask for budget FIRST — do not open browser yet
             setMessages(prev => [...prev, {
-                role: 'agent-await-login',
-                platform: agentAction.platform,
-                isFirstLogin: true,
+                role: 'agent-budget',
                 agentAction,
                 timestamp: Date.now()
             }]);
-
-            const loginResult = await window.buddyAgent.checkoutStep({ type: 'amazon_login_goto' });
-            if (!loginResult.success) {
-                setMessages(prev => [...prev, { role: 'buddy', text: '⚠️ Could not open login page.', timestamp: Date.now() }]);
-            }
             return true;
         }
 
@@ -3401,23 +3561,27 @@ const Spotlight = React.memo(() => {
 class ErrorBoundary extends React.Component {
     constructor(props) {
         super(props);
-        this.state = { hasError: false };
+        this.state = { hasError: false, error: null };
     }
 
-    static getDerivedStateFromError() {
-        return { hasError: true };
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
     }
 
     componentDidCatch(error, info) {
-        console.error("React Crash:", error, info);
+        console.error('[Buddy] React crash:', error, info);
     }
 
     render() {
         if (this.state.hasError) {
             return (
-                <div style={{ color: 'white', padding: 20, textAlign: 'center', fontFamily: 'sans-serif' }}>
-                    <h2 style={{ color: '#ef4444' }}>⚠️ UI Crashed</h2>
-                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>Please check the DevTools console.</p>
+                <div style={{ padding: 20, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
+                    <p style={{ fontSize: 14, marginBottom: 8 }}>⚠️ Something went wrong</p>
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>{this.state.error?.message}</p>
+                    <button onClick={() => this.setState({ hasError: false, error: null })}
+                        style={{ padding: '6px 16px', borderRadius: 8, background: 'rgba(99,102,241,0.2)', border: '0.5px solid rgba(99,102,241,0.3)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 12 }}>
+                        Try Again
+                    </button>
                 </div>
             );
         }
