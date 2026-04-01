@@ -1642,7 +1642,7 @@ const AgentRebudgetCard = React.memo(({ action, originalBudget, cheapestAvailabl
 });
 
 // Separate component so it has its own state — cannot use useState inside useMemo
-const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAction }) => {
+const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAction, setCurrentAction, setAgentStep }) => {
     const action = msg?.action;
     const [budget, setBudget] = useState('');
     if (!action) {
@@ -1697,120 +1697,44 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
                                     ...msg.action,
                                     budget: budgetValue && budgetValue.trim() !== '' ? parseFloat(budgetValue.trim()) : null
                                 };
-                                console.log('[Frontend] Executing with budget:', actionWithBudget.budget);
 
-                                if (actionWithBudget.budget !== null && actionWithBudget.budget < 100) {
-                                    console.warn('[Frontend] Budget seems very low:', actionWithBudget.budget);
-                                }
+                                console.log('✅ Approve clicked:', actionWithBudget);
 
+                                // Update shared state so login/search handlers can access action
+                                setCurrentAction(actionWithBudget);
+                                setAgentStep('approved');
                                 setPendingAgentAction(null);
-                                setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'agent-done', status: 'running', text: '🚀 Launching automation...' } : m));
 
-                                if (actionWithBudget.platform.toLowerCase() === 'amazon') {
+                                // Mark confirm card as launched
+                                setMessages(prev => prev.map((m, idx) => idx === index
+                                    ? { ...m, role: 'agent-done', status: 'running', text: '🚀 Opening ' + (actionWithBudget.platform || 'site') + '...' }
+                                    : m
+                                ));
+
+                                // Step 1: Open the site
+                                const openResult = await window.buddyAgent.execute(actionWithBudget);
+                                console.log('📦 Open result:', openResult);
+
+                                if (!openResult.success && !openResult.alreadyLoggedIn) {
                                     setMessages(prev => [...prev, {
                                         role: 'buddy',
-                                        text: `🔐 Taking you to Amazon login first...`,
+                                        text: `⚠️ Failed to open ${actionWithBudget.platform || 'site'}: ${openResult.error || 'Unknown error'}`,
                                         timestamp: Date.now()
                                     }]);
-                                    
-                                    const agentAction = actionWithBudget;
-                                    // Call login goto via execute (launches browser)
-                                    const loginResult = await window.buddyAgent.execute({ type: 'amazon_login_goto' });
-
-                                    if (!loginResult.success) {
-                                        setMessages(prev => [...prev, {
-                                            role: 'buddy',
-                                            text: `⚠️ Could not open login page: ${loginResult.error}`,
-                                            timestamp: Date.now()
-                                        }]);
-                                        return;
-                                    }
-
-                                    if (loginResult.alreadyLoggedIn) {
-                                        // Already logged in — skip to search
-                                        setMessages(prev => prev.map((m, idx) => idx === messages.length ? {
-                                            role: 'buddy',
-                                            text: '✅ Already logged in! Searching for your item...',
-                                            timestamp: Date.now()
-                                        } : m));
-                                        // trigger search directly
-                                        const searchResult = await window.buddyAgent.checkoutStep({
-                                            ...agentAction,
-                                            type: 'amazon_search'
-                                        });
-
-                                        if (searchResult.success && searchResult.products) {
-                                            setMessages(prev => [...prev, {
-                                                role: 'agent-product-approval',
-                                                action: agentAction,
-                                                products: searchResult.products,
-                                                timestamp: Date.now()
-                                            }]);
-                                        } else {
-                                            setMessages(prev => [...prev, {
-                                                role: 'buddy',
-                                                text: `⚠️ Search failed: ${searchResult.error || 'No products found.'}`,
-                                                timestamp: Date.now()
-                                            }]);
-                                        }
-                                        return;
-                                    }
-
-                                    // Login page is ready — NOW show the await login card
-                                    setMessages(prev => [...prev, {
-                                        role: 'agent-await-login',
-                                        platform: agentAction.platform,
-                                        isFirstLogin: true,
-                                        agentAction,
-                                        timestamp: Date.now()
-                                    }]);
-                                } else {
-                                    const result = await window.buddyAgent.execute(actionWithBudget);
-                                    console.log('[Frontend] Agent result:', result);
-
-                                    if (result.success) {
-                                        setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
-                                            role: 'buddy',
-                                            text: `✅ Added to cart! ${result.productTitle ? `"${result.productTitle}"` : ''} ${result.productPrice ? `at ₹${result.productPrice}` : ''}\n\nProceeding to checkout...`,
-                                            timestamp: m.timestamp
-                                        } : m));
-                                        setTimeout(() => {
-                                            setMessages(prev => [...prev, {
-                                                role: 'agent-payment',
-                                                platform: msg.action.platform,
-                                                timestamp: Date.now()
-                                            }]);
-                                        }, 800);
-                                    } else if (result.budgetExceeded) {
-                                        setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
-                                            role: 'agent-rebudget',
-                                            action: msg.action,
-                                            originalBudget: result.originalBudget,
-                                            cheapestAvailable: result.cheapestAvailable,
-                                            cheapestTitle: result.cheapestTitle,
-                                            timestamp: m.timestamp
-                                        } : m));
-                                    } else if (!result.success && result.needsSelection) {
-                                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                            role: 'agent-select',
-                                            action: actionWithBudget,
-                                            options: result.options,
-                                            timestamp: m.timestamp
-                                        } : m));
-                                    } else if (!result.success && result.loginRequired) {
-                                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                            role: 'buddy',
-                                            text: `⚠️ ${result.message || 'Please login to Amazon to continue.'}`,
-                                            timestamp: m.timestamp
-                                        } : m));
-                                    } else {
-                                        setMessages(prev => prev.map((m, idx) => idx === msgIndex ? {
-                                            role: 'buddy',
-                                            text: `⚠️ ${result.error || 'Something went wrong'}`,
-                                            timestamp: m.timestamp
-                                        } : m));
-                                    }
+                                    setAgentStep('idle');
+                                    return;
                                 }
+
+                                // Step 2: Show login-wait card and STOP — search happens after login
+                                setAgentStep('login');
+                                setMessages(prev => [...prev, {
+                                    role: 'agent-await-login',
+                                    platform: actionWithBudget.platform,
+                                    isFirstLogin: true,
+                                    agentAction: actionWithBudget,
+                                    timestamp: Date.now()
+                                }]);
+                                // ❌ STOP HERE — search only happens inside the login card
                             }}
                             style={{
                                 flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 500,
@@ -1919,7 +1843,7 @@ const AutomationCard = ({ icon = '✨', title, description, text, timestamp, ind
     );
 };
 
-const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction }) => {
+const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction, setCurrentAction, setAgentStep }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const safeMessages = Array.isArray(messages) ? messages : [];
 
@@ -2133,7 +2057,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
 
                 // Agent confirmation card
                 if (msg.role === 'agent-confirm') {
-                    return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} />;
+                    return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} setCurrentAction={setCurrentAction} setAgentStep={setAgentStep} />;
                 }
 
         // Agent rebudget card — shown when no item within original budget
@@ -2618,45 +2542,74 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                     isFirstLogin={msg.isFirstLogin}
                     paymentInfo={msg.paymentInfo}
                     onLoginDetected={async () => {
+                        // Replace login-wait card with a status message
                         setMessages(prev => prev.map((m, idx) => idx === index ? {
                             role: 'buddy',
-                            text: 'Logged in! Now searching for your item...',
+                            text: '✅ Login detected! Searching for your item now...',
                             timestamp: m.timestamp
                         } : m));
 
-                        if (msg.isFirstLogin && msg.agentAction) {
+                        // Resolve agentAction — prefer msg.agentAction, fall back to currentAction
+                        const agentAction = msg.agentAction || currentAction || {};
+                        const query = agentAction.query || '';
+                        const platform = msg.platform || agentAction.platform || 'Amazon';
+
+                        if (msg.isFirstLogin && agentAction.type) {
+                            // Search now that we are logged in
                             const searchResult = await window.buddyAgent.execute({
-                                ...msg.agentAction,
-                                type: msg.agentAction.type || 'amazon_search'
+                                ...agentAction,
+                                type: agentAction.type || 'amazon_search'
                             });
 
-                            if (!searchResult.success) {
-                                if (searchResult.budgetExceeded) {
+                            if (!searchResult || !searchResult.success) {
+                                if (searchResult?.budgetExceeded) {
                                     setMessages(prev => [...prev, {
                                         role: 'agent-rebudget',
-                                        action: msg.agentAction,
+                                        action: agentAction,
                                         originalBudget: searchResult.originalBudget,
                                         cheapestAvailable: searchResult.cheapestAvailable,
                                         cheapestTitle: searchResult.cheapestTitle,
                                         timestamp: Date.now()
                                     }]);
                                 } else {
-                                    setMessages(prev => [...prev, { role: 'buddy', text: searchResult.error, timestamp: Date.now() }]);
+                                    setMessages(prev => [...prev, {
+                                        role: 'buddy',
+                                        text: `⚠️ Search failed: ${searchResult?.error || 'No products found. Please try again.'}`,
+                                        timestamp: Date.now()
+                                    }]);
                                 }
                                 return;
                             }
+
+                            // No products returned
+                            if (!searchResult.products || searchResult.products.length === 0) {
+                                setMessages(prev => [...prev, {
+                                    role: 'buddy',
+                                    text: `⚠️ Couldn't find products for "${query}". Try a different search.`,
+                                    timestamp: Date.now()
+                                }]);
+                                return;
+                            }
+
+                            // Show found count, then product card
+                            setMessages(prev => [...prev, {
+                                role: 'buddy',
+                                text: `🔍 Found ${searchResult.products.length} product${searchResult.products.length !== 1 ? 's' : ''} for "${query}". Select one below:`,
+                                timestamp: Date.now()
+                            }]);
 
                             setMessages(prev => [...prev, {
                                 role: 'agent-product-approval',
                                 products: searchResult.products,
                                 currentIndex: 0,
-                                agentAction: msg.agentAction,
+                                agentAction,
                                 timestamp: Date.now()
                             }]);
                         } else {
+                            // Post-login for checkout (login required mid-flow) — go to payment
                             setMessages(prev => [...prev, {
                                 role: 'agent-payment',
-                                platform: msg.platform,
+                                platform,
                                 timestamp: Date.now()
                             }]);
                         }
@@ -3265,6 +3218,10 @@ const Spotlight = React.memo(() => {
     const [sttOnline, setSttOnline] = useState(false);
     // true while the Amazon workflow is waiting for the user's budget reply
     const [isWaitingForInput, setIsWaitingForInput] = useState(false);
+    // tracks the action currently being executed (shared with login/search handlers)
+    const [currentAction, setCurrentAction] = useState(null);
+    // state-machine step: idle → approved → login → search → done
+    const [agentStep, setAgentStep] = useState('idle');
     const inputRef = useRef(null);
     const lastUsedResponsesRef = useRef({});
     const chatEndRef = useRef(null);
@@ -3473,121 +3430,31 @@ const Spotlight = React.memo(() => {
             return true;
         }
 
-        // ── 3. Agent commands → backend via IPC ──────────────────────────────
+        // ── 3. Agent commands → show agent-confirm card then STOP ───────────
         const agentAction = parseAgentCommand(finalText);
-        if (agentAction?.platform === 'Amazon') {
-            setMessages(prev => [...prev, userMsg]);
-            setChatOpen(true);
+
+        if (agentAction) {
+            console.log('STATE: idle →', agentAction);
+            setCurrentAction(agentAction);
+            setAgentStep('idle');
             setSidebarVisible(false);
+            setChatOpen(true);
 
-            // STEP 1: Show agent-confirm card — "Here's what I'll do"
-            setMessages(prev => [...prev, {
-                role: 'agent-confirm',
-                action: {
-                    platform: 'Amazon',
-                    description: `Search for "${agentAction.query}" on Amazon`,
-                    emoji: '📦'
-                },
-                timestamp: Date.now()
-            }]);
-
-            // STEP 2: Budget question as a card -- no plain text automation messages
-            setMessages(prev => [...prev, {
-                role: 'agent-confirm',
-                action: {
-                    platform: 'Budget',
-                    description: `What's your budget for "${agentAction.query}"? Type a number (e.g. 2000) or skip for no limit.`,
-                    emoji: '💰'
-                },
-                timestamp: Date.now()
-            }]);
-
-            // Signal that we're waiting — prevents ALL other handlers from firing
-            setIsWaitingForInput(true);
-
-            // Wait for the user's next reply via chat input
-            const budgetReply = await new Promise(resolve => {
-                resolveUserInputRef.current = resolve;
-            });
-            // isWaitingForInput is reset inside the interceptor above
-
-            let finalBudget = null;
-            if (budgetReply && budgetReply.toLowerCase() !== 'skip') {
-                const parsed = parseInt(budgetReply.replace(/[^0-9]/g, ''), 10);
-                if (!isNaN(parsed) && parsed > 0) finalBudget = parsed;
-            }
-
-            // STEP 3: Status card confirming budget
-            setMessages(prev => [...prev, {
-                role: 'agent-status',
-                icon: finalBudget ? '💰' : '⚡',
-                title: finalBudget ? `Budget: ₹${finalBudget}` : 'No Budget Limit',
-                description: finalBudget
-                    ? `Searching for "${agentAction.query}" within ₹${finalBudget}...`
-                    : `Finding the best options for "${agentAction.query}" on Amazon...`,
-                timestamp: Date.now()
-            }]);
-
-            // Drive the Amazon workflow
-            const loginResult = await window.buddyAgent.execute({ type: 'amazon_login_goto' });
-
-            if (!loginResult.success) {
-                setMessages(prev => [...prev, {
-                    role: 'agent-status',
-                    icon: '⚠️',
-                    title: 'Could Not Open Amazon',
-                    description: loginResult.error || 'Please try again.',
+            setMessages(prev => [
+                ...prev,
+                {
+                    role: 'user',
+                    text: finalText,
                     timestamp: Date.now()
-                }]);
-                return true;
-            }
-
-            if (loginResult.alreadyLoggedIn) {
-                setMessages(prev => [...prev, {
-                    role: 'agent-status',
-                    icon: '🔍',
-                    title: 'Searching Amazon',
-                    description: `Already logged in. Searching for "${agentAction.query}"${finalBudget ? ` within ₹${finalBudget}` : ''}...`,
-                    timestamp: Date.now()
-                }]);
-                const sRes = await window.buddyAgent.execute({
-                    type: 'amazon_search',
-                    query: agentAction.query,
-                    budget: finalBudget
-                });
-                if (sRes.success && sRes.products?.length > 0) {
-                    setMessages(prev => [...prev, {
-                        role: 'agent-product-approval',
-                        action: agentAction,
-                        budget: finalBudget,
-                        products: sRes.products,
-                        currentIndex: 0,
-                        timestamp: Date.now()
-                    }]);
-                } else {
-                    setMessages(prev => [...prev, {
-                        role: 'agent-status',
-                        icon: '⚠️',
-                        title: 'No Products Found',
-                        description: finalBudget
-                            ? `No results within ₹${finalBudget} for "${agentAction.query}". Try a higher budget or different search.`
-                            : `No results found for "${agentAction.query}". Try a different search.`,
-                        timestamp: Date.now()
-                    }]);
-                }
-            } else {
-                // Need login — show the await login card
-                setMessages(prev => [...prev, {
-                    role: 'agent-await-login',
-                    platform: agentAction.platform,
+                },
+                {
+                    role: 'agent-confirm',
                     action: agentAction,
-                    budget: finalBudget,
-                    isFirstLogin: true,
-                    agentAction: { ...agentAction, budget: finalBudget },
                     timestamp: Date.now()
-                }]);
-            }
-            return true;
+                }
+            ]);
+
+            return true; // 🚨 STOP FLOW HERE — AgentConfirmCard handles everything next
         }
 
         const agentKeywords = ['order', 'buy', 'zomato', 'swiggy', 'amazon', 'flipkart', 'uber', 'ola', 'bookmyshow'];
@@ -3733,6 +3600,9 @@ const Spotlight = React.memo(() => {
         pointerEvents: mainVisible ? 'auto' : 'none'
     }), [mainVisible]);
 
+    // Safety guard — should never be null due to useState initializer, but protects render
+    if (!messages || !Array.isArray(messages)) return null;
+
     return (
         <>
             <style>{`
@@ -3877,7 +3747,7 @@ const Spotlight = React.memo(() => {
                     }} />
                     <div className="w-full flex flex-col">
                         <ChatHeader />
-                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages || []} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} />
+                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages || []} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} setCurrentAction={setCurrentAction} setAgentStep={setAgentStep} />
                         {(messages || []).length === 0 && !chatOpen && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
