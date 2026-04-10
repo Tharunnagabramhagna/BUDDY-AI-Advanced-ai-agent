@@ -1642,7 +1642,7 @@ const AgentRebudgetCard = React.memo(({ action, originalBudget, cheapestAvailabl
 });
 
 // Separate component so it has its own state — cannot use useState inside useMemo
-const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAction, setCurrentAction, setAgentStep }) => {
+const AgentConfirmCard = ({ msg, index, setMessages, setCurrentAction, handleApprove }) => {
     const action = msg?.action;
     const [budget, setBudget] = useState('');
     if (!action) {
@@ -1654,12 +1654,7 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
             <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
                 <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
             </div>
-            <div style={{
-                maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.08))',
-                border: '0.5px solid rgba(99,102,241,0.25)',
-                overflow: 'hidden'
-            }}>
+            <div style={{ maxWidth: '88%', borderRadius: '16px 16px 16px 4px', background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.08))', border: '0.5px solid rgba(99,102,241,0.25)', overflow: 'hidden' }}>
                 <div style={{ padding: '10px 14px 8px' }}>
                     <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: '0 0 6px' }}>Here&apos;s what I&apos;ll do:</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.07)', marginBottom: 10 }}>
@@ -1669,8 +1664,6 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
                             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: 0 }}>{action.description}</p>
                         </div>
                     </div>
-
-                    {/* Budget input — lives in component state, fully reactive */}
                     <div style={{ marginBottom: 10 }}>
                         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: '0 0 5px' }}>💰 Max budget (₹) — optional</p>
                         <input
@@ -1679,85 +1672,25 @@ const AgentConfirmCard = ({ msg, index, msgIndex, setMessages, setPendingAgentAc
                             value={budget}
                             onChange={e => setBudget(e.target.value)}
                             onKeyDown={e => e.stopPropagation()}
-                            style={{
-                                width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12,
-                                background: 'rgba(255,255,255,0.08)',
-                                border: '0.5px solid rgba(255,255,255,0.2)',
-                                color: 'rgba(255,255,255,0.9)',
-                                outline: 'none', boxSizing: 'border-box'
-                            }}
+                            style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.08)', border: '0.5px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.9)', outline: 'none', boxSizing: 'border-box' }}
                         />
                     </div>
-
                     <div style={{ display: 'flex', gap: 6 }}>
                         <button
-                            onClick={async () => {
-                                const budgetValue = budget;
-                                const actionWithBudget = {
-                                    ...msg.action,
-                                    budget: budgetValue && budgetValue.trim() !== '' ? parseFloat(budgetValue.trim()) : null
-                                };
-
-                                console.log('✅ Approve clicked:', actionWithBudget);
-
-                                // Update shared state so login/search handlers can access action
-                                setCurrentAction(actionWithBudget);
-                                setAgentStep('approved');
-                                setPendingAgentAction(null);
-
-                                // Mark confirm card as launched
-                                setMessages(prev => prev.map((m, idx) => idx === index
-                                    ? { ...m, role: 'agent-done', status: 'running', text: '🚀 Opening ' + (actionWithBudget.platform || 'site') + '...' }
-                                    : m
-                                ));
-
-                                // Step 1: Open the site
-                                const openResult = await window.buddyAgent.execute(actionWithBudget);
-                                console.log('📦 Open result:', openResult);
-
-                                if (!openResult.success && !openResult.alreadyLoggedIn) {
-                                    setMessages(prev => [...prev, {
-                                        role: 'buddy',
-                                        text: `⚠️ Failed to open ${actionWithBudget.platform || 'site'}: ${openResult.error || 'Unknown error'}`,
-                                        timestamp: Date.now()
-                                    }]);
-                                    setAgentStep('idle');
-                                    return;
-                                }
-
-                                // Step 2: Show login-wait card and STOP — search happens after login
-                                setAgentStep('login');
-                                setMessages(prev => [...prev, {
-                                    role: 'agent-await-login',
-                                    platform: actionWithBudget.platform,
-                                    isFirstLogin: true,
-                                    agentAction: actionWithBudget,
-                                    timestamp: Date.now()
-                                }]);
-                                // ❌ STOP HERE — search only happens inside the login card
+                            onClick={() => {
+                                console.log("BUTTON CLICKED");
+                                handleApprove(msg.action);
                             }}
-                            style={{
-                                flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 500,
-                                background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))',
-                                border: '0.5px solid rgba(99,102,241,0.4)',
-                                color: 'rgba(214,221,255,0.95)', cursor: 'pointer',
-                                transition: 'all 0.2s ease'
-                            }}
+                            style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))', border: '0.5px solid rgba(99,102,241,0.4)', color: 'rgba(214,221,255,0.95)', cursor: 'pointer', transition: 'all 0.2s ease' }}
                         >
                             ✓ Approve
                         </button>
                         <button
                             onClick={() => {
-                                setPendingAgentAction(null);
+                                setPendingAgentAction?.(null);
                                 setMessages(prev => prev.map((m, idx) => idx === index ? { role: 'buddy', text: 'Cancelled! Let me know if you need anything else.', timestamp: m.timestamp } : m));
                             }}
-                            style={{
-                                padding: '7px 14px', borderRadius: 8, fontSize: 12,
-                                background: 'rgba(255,255,255,0.04)',
-                                border: '0.5px solid rgba(255,255,255,0.1)',
-                                color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
-                                transition: 'all 0.2s ease'
-                            }}
+                            style={{ padding: '7px 14px', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s ease' }}
                         >
                             Cancel
                         </button>
@@ -1843,7 +1776,7 @@ const AutomationCard = ({ icon = '✨', title, description, text, timestamp, ind
     );
 };
 
-const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction, setCurrentAction, setAgentStep }) => {
+const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], onClose, chatEndRef, setMessages, setChatOpen, setSidebarVisible, setPendingAgentAction, setCurrentAction, setAgentStep, handleApprove, handleManualLoginDetected }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const safeMessages = Array.isArray(messages) ? messages : [];
 
@@ -1864,1006 +1797,9 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
         margin: "6px 0"
     };
 
-    const messageList = useMemo(() => {
-        try {
-            return safeMessages.map((msg, index) => {
-                // agent-budget role is handled via chat — no UI card rendered
+    // messageList useMemo removed — rendering is now done directly in JSX via messages.map below
 
-                if (msg.role === 'agent-await-login') {
-                    // Safely resolve query from whichever field is populated
-                    const loginQuery = msg.action?.query || msg.agentAction?.query || 'your item';
-                    const loginBudget = msg.budget ?? msg.agentAction?.budget ?? null;
-                    return (
-                        <div key={index} style={{ ...cardStyle }}>
-                            <div style={{ marginBottom: 8 }}>
-                                🔐 Login to Amazon
-                            </div>
-                            <div style={systemMsg}>
-                                Complete login in the browser window, then click confirm
-                            </div>
-                            <button
-                                onClick={async () => {
-                                    setMessages(p => [...p, { role: 'buddy', text: 'Verifying login...', timestamp: Date.now() }]);
-                                    const res = await window.buddyAgent.execute({ type: 'amazon_poll_login' });
-                                    if (res.isLoggedIn || res.alreadyLoggedIn) {
-                                        setMessages(p => p.map((m, i) => i === index ? { role: 'buddy', text: `Login verified! Searching for ${loginQuery}...` } : m));
-                                        const sRes = await window.buddyAgent.execute({ type: 'amazon_search', query: loginQuery, budget: loginBudget });
-                                        if (sRes.success && sRes.products?.length > 0) {
-                                            setMessages(p => [...p, { role: 'agent-product-approval', action: msg.action || msg.agentAction, budget: loginBudget, products: sRes.products, currentIndex: 0, timestamp: Date.now() }]);
-                                        } else {
-                                            setMessages(p => [...p, { role: 'buddy', text: 'No products found.', timestamp: Date.now() }]);
-                                        }
-                                    }
-                                }}
-                                style={{
-                                    marginTop: 10, padding: "10px", width: "100%",
-                                    borderRadius: "10px", background: "#60a5fa",
-                                    border: "none", fontWeight: 600, cursor: "pointer"
-                                }}
-                            >
-                                I’ve logged in ✅
-                            </button>
-                        </div>
-                    );
-                }
 
-                if (msg.role === 'agent-product-approval') {
-                    const product = msg.products?.[msg.currentIndex];
-                    if (!product) return null;
-                    return (
-                        <div key={index} style={{ ...cardStyle }}>
-                            <img
-                                src={product.image}
-                                alt={product.title}
-                                style={{
-                                    width: "100%",
-                                    height: 180,
-                                    objectFit: "contain",
-                                    marginBottom: 10
-                                }}
-                            />
-                            <div style={{ fontWeight: 500 }}>
-                                {product.title?.slice(0, 80)}
-                            </div>
-                            <div style={{ marginTop: 6, color: "#4ade80", fontWeight: 600 }}>
-                                ₹{product.price}
-                            </div>
-                            <div style={{ fontSize: 13, opacity: 0.7 }}>
-                                ⭐ {product.rating}
-                            </div>
-                            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                                <button
-                                    onClick={async () => {
-                                        setMessages(pr => pr.map((m, i) => i === index ? { role: 'buddy', text: `✅ Buying ${product.title.slice(0, 20)}...` } : m));
-                                        const res = await window.buddyAgent.execute({ type: 'amazon_add_to_cart', url: product.url });
-                                        if (res.addedToCart) {
-                                            const ck = await window.buddyAgent.execute({ type: 'amazon_goto_checkout' });
-                                            if (ck.success) {
-                                                setMessages(pr => [...pr, { role: 'agent-payment', action: msg.action, timestamp: Date.now() }]);
-                                            } else {
-                                                setMessages(pr => [...pr, { role: 'buddy', text: `Failed to open checkout: ${ck.error}` }]);
-                                            }
-                                        }
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: "10px",
-                                        borderRadius: "10px",
-                                        background: "#22c55e",
-                                        border: "none",
-                                        fontWeight: 600,
-                                        cursor: "pointer"
-                                    }}
-                                >BUY</button>
-                                <button
-                                    onClick={() => {
-                                        if (msg.currentIndex + 1 < msg.products.length) {
-                                            setMessages(pr => pr.map((m, i) => i === index ? { ...m, currentIndex: msg.currentIndex + 1 } : m));
-                                        } else {
-                                            setMessages(pr => pr.map((m, i) => i === index ? { role: 'buddy', text: 'Skipped all options.' } : m));
-                                        }
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: "10px",
-                                        borderRadius: "10px",
-                                        background: "#ef4444",
-                                        border: "none",
-                                        fontWeight: 600,
-                                        cursor: "pointer"
-                                    }}
-                                >SKIP</button>
-                            </div>
-                        </div>
-                    );
-                }
-
-                if (msg.role === 'agent-payment') {
-                    return (
-                        <div key={index} style={{ ...cardStyle }}>
-                            <div style={{ marginBottom: 10 }}>
-                                Select Payment Method
-                            </div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {["COD", "UPI", "CARD"].map((p) => (
-                                    <button
-                                        key={p}
-                                        onClick={async () => {
-                                            setMessages(pr => pr.map((ms, i) => i === index ? { role: 'buddy', text: `Selecting payment: ${p}...` } : ms));
-                                            const res = await window.buddyAgent.execute({ type: 'amazon_select_payment', method: p.toLowerCase() });
-                                            if (res.success) {
-                                                setMessages(pr => [...pr, { role: 'agent-final-approval', timestamp: Date.now() }]);
-                                            } else {
-                                                setMessages(pr => [...pr, { role: 'buddy', text: `Failed to select payment: ${res.error}` }]);
-                                            }
-                                        }}
-                                        style={{
-                                            padding: "10px",
-                                            borderRadius: "10px",
-                                            background: "rgba(255,255,255,0.05)",
-                                            border: "1px solid rgba(255,255,255,0.1)",
-                                            color: "white",
-                                            cursor: "pointer",
-                                            fontWeight: 500
-                                        }}
-                                    >{p}</button>
-                                ))}
-                            </div>
-                        </div>
-                    );
-                }
-
-                if (msg.role === 'agent-final-approval') {
-                    return (
-                        <div key={index} style={{ ...cardStyle }}>
-                            <div style={{ marginBottom: 10 }}>
-                                Confirm Order?
-                            </div>
-                            <div style={{ display: "flex", gap: 10 }}>
-                                <button
-                                    onClick={async () => {
-                                        setMessages(pr => pr.map((ms, i) => i === index ? { role: 'buddy', text: 'Placing order... Please wait...' } : ms));
-                                        const res = await window.buddyAgent.execute({ type: 'amazon_place_order' });
-                                        setMessages(pr => [...pr, { role: 'buddy', text: res.message || res.error }]);
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: "10px",
-                                        borderRadius: "10px",
-                                        background: "#22c55e",
-                                        border: "none",
-                                        fontWeight: 600,
-                                        cursor: "pointer"
-                                    }}
-                                >YES</button>
-                                <button
-                                    onClick={() => {
-                                        setMessages(pr => pr.map((ms, i) => i === index ? { role: 'buddy', text: '❌ Order cancelled. Your cart is saved!' } : ms));
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: "10px",
-                                        borderRadius: "10px",
-                                        background: "#ef4444",
-                                        border: "none",
-                                        fontWeight: 600,
-                                        cursor: "pointer"
-                                    }}
-                                >CANCEL</button>
-                            </div>
-                        </div>
-                    );
-                }
-
-                // Agent confirmation card
-                if (msg.role === 'agent-confirm') {
-                    return <AgentConfirmCard key={index} msg={msg} index={index} msgIndex={index} setMessages={setMessages} setPendingAgentAction={setPendingAgentAction} setCurrentAction={setCurrentAction} setAgentStep={setAgentStep} />;
-                }
-
-        // Agent rebudget card — shown when no item within original budget
-        if (msg.role === 'agent-rebudget') {
-            return (
-                <AgentRebudgetCard
-                    key={index}
-                    action={msg.action}
-                    originalBudget={msg.originalBudget}
-                    cheapestAvailable={msg.cheapestAvailable}
-                    cheapestTitle={msg.cheapestTitle}
-                    onSubmit={async (newBudget) => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: `🔄 Trying again with budget ₹${newBudget}...`,
-                            timestamp: m.timestamp
-                        } : m));
-                        const result = await window.buddyAgent.execute({
-                            ...msg.action,
-                            budget: parseFloat(newBudget)
-                        });
-                        if (!result.success && result.budgetExceeded) {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'agent-rebudget',
-                                action: msg.action,
-                                originalBudget: result.originalBudget,
-                                cheapestAvailable: result.cheapestAvailable,
-                                cheapestTitle: result.cheapestTitle,
-                                timestamp: m.timestamp
-                            } : m));
-                        } else if (!result.success && result.needsSelection) {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'agent-select',
-                                action: { ...msg.action, budget: parseFloat(newBudget) },
-                                options: result.options,
-                                timestamp: m.timestamp
-                            } : m));
-                        } else {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'buddy',
-                                text: result.success
-                                    ? `✅ Done! Found an item within ₹${newBudget} and added to cart!`
-                                    : `⚠️ ${result.error}`,
-                                timestamp: m.timestamp
-                            } : m));
-                            
-                            if (result.success) {
-                                setTimeout(() => {
-                                    setMessages(prev => [...prev, {
-                                        role: 'agent-payment',
-                                        platform: msg.action.platform,
-                                        timestamp: Date.now()
-                                    }]);
-                                }, 500);
-                            }
-                        }
-                    }}
-                />
-            );
-        }
-
-        // Agent select card — shown when multiple valid choices exist
-        if (msg.role === 'agent-select') {
-            return (
-                <AgentSelectCard
-                    key={index}
-                    action={msg.action}
-                    options={msg.options}
-                    onSelect={async (option) => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: `🔄 Selecting ${option.title.slice(0, 30)}... and adding to cart...`,
-                            timestamp: m.timestamp
-                        } : m));
-                        
-                        const result = await window.buddyAgent.execute({
-                            ...msg.action,
-                            selectedProduct: option.url
-                        });
-                        
-                        if (!result.success && result.loginRequired) {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'buddy',
-                                text: `⚠️ ${result.message || 'Please login to Amazon to continue.'}`,
-                                timestamp: m.timestamp
-                            } : m));
-                        } else if (result.success) {
-                            const successText = result.stage === 'checkout_started'
-                                ? `✅ Added to cart and started checkout. Choose a payment option to continue.`
-                                : `✅ Added to cart and verified the cart contents.`;
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'buddy',
-                                text: successText,
-                                timestamp: m.timestamp
-                            } : m));
-                            
-                            if (result.stage === 'checkout_started') {
-                                setTimeout(() => {
-                                    setMessages(prev => [...prev, {
-                                        role: 'agent-payment',
-                                        platform: msg.action.platform,
-                                        timestamp: Date.now()
-                                    }]);
-                                }, 500);
-                            }
-                        } else {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'buddy',
-                                text: `⚠️ Failed to select: ${result.error}`,
-                                timestamp: m.timestamp
-                            } : m));
-                        }
-                    }}
-                    onLoadMore={async () => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: `🔄 Loading more options...`,
-                            timestamp: m.timestamp
-                        } : m));
-                        
-                        const result = await window.buddyAgent.execute({
-                            ...msg.action,
-                            loadMoreOptions: true
-                        });
-                        
-                        if (!result.success && result.needsSelection) {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'agent-select',
-                                action: msg.action,
-                                options: result.options,
-                                timestamp: m.timestamp
-                            } : m));
-                        } else if (!result.success && result.budgetExceeded) {
-                             setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'agent-rebudget',
-                                action: msg.action,
-                                originalBudget: result.originalBudget,
-                                cheapestAvailable: result.cheapestAvailable,
-                                cheapestTitle: result.cheapestTitle,
-                                timestamp: m.timestamp
-                            } : m));
-                        } else if (result.success) {
-                            setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'buddy',
-                                text: `✅ Updated the cart flow and opened checkout.`,
-                                timestamp: m.timestamp
-                            } : m));
-
-                            // Trigger payment selection for shopping/food
-                            setTimeout(() => {
-                                setMessages(prev => [...prev, {
-                                    role: 'agent-payment',
-                                    platform: msg.action.platform,
-                                    timestamp: Date.now()
-                                }]);
-                            }, 500);
-                        } else {
-                             setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                role: 'buddy',
-                                text: `⚠️ ${result?.error || 'Failed'}`,
-                                timestamp: m.timestamp
-                            } : m));
-                        }
-                    }}
-                />
-            );
-        }
-
-        if (msg.role === 'agent-payment') {
-            return (
-                <PaymentOptionsCard
-                    key={index}
-                    platform={msg.platform}
-                    onSelect={async (paymentInfo) => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: `💳 Payment: ${paymentInfo.method.toUpperCase()} selected\n\n🔄 Navigating to checkout in your browser...`,
-                            timestamp: m.timestamp
-                        } : m));
-
-                        const checkoutResult = await window.buddyAgent.checkoutStep({
-                            type: `${msg.platform.toLowerCase()}_goto_checkout`
-                        });
-
-                        if (!checkoutResult.success) {
-                            setMessages(prev => [...prev, {
-                                role: 'buddy',
-                                text: `⚠️ Could not reach checkout: ${checkoutResult.error}\n\nPlease complete checkout manually in the browser.`,
-                                timestamp: Date.now()
-                            }]);
-                            return;
-                        }
-
-                        if (checkoutResult.needsLogin) {
-                            setMessages(prev => [...prev, {
-                                role: 'agent-await-login',
-                                platform: msg.platform,
-                                paymentInfo,
-                                timestamp: Date.now()
-                            }]);
-                        } else {
-                            const paymentResult = await window.buddyAgent.checkoutStep({
-                                type: `${msg.platform.toLowerCase()}_select_payment`,
-                                method: paymentInfo.method,
-                                upiId: paymentInfo.upiId
-                            });
-
-                            if (!paymentResult.success) {
-                                setMessages(prev => [...prev, {
-                                    role: 'buddy',
-                                    text: `⚠️ Payment selection issue: ${paymentResult.error}\n\nPlease complete payment manually in the browser.`,
-                                    timestamp: Date.now()
-                                }]);
-                                return;
-                            }
-
-                            // Show order approval card — do NOT auto place order
-                            setMessages(prev => [...prev, {
-                                role: 'agent-order-approval',
-                                platform: msg.platform,
-                                paymentMethod: paymentInfo.method,
-                                timestamp: Date.now()
-                            }]);
-                        }
-                    }} /*
-                                setMessages(prev => [...prev, {
-                                    role: 'buddy',
-                                    text: `âš ï¸ Payment selection issue: ${paymentResult.error}\n\nPlease complete payment manually in the browser.`,
-                                    timestamp: Date.now()
-                                }]);
-*/
-                    onCancel={() => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: '❌ Checkout cancelled. Your cart is saved!',
-                            timestamp: m.timestamp
-                        } : m));
-                    }}
-                />
-            );
-        }
-
-        if (msg.role === 'agent-order-approval') {
-            return (
-                <div key={index} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
-                    <div style={{
-                        width: 20, height: 20, borderRadius: '50%',
-                        background: 'rgba(52,211,153,0.12)',
-                        border: '0.5px solid rgba(52,211,153,0.3)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0, marginTop: 2
-                    }}>
-                        <Sparkles size={9} style={{ color: 'rgba(52,211,153,0.8)' }} />
-                    </div>
-                    <div style={{
-                        maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
-                        background: 'linear-gradient(135deg, rgba(52,211,153,0.08), rgba(99,102,241,0.06))',
-                        border: '0.5px solid rgba(52,211,153,0.3)',
-                        padding: '14px', width: '100%'
-                    }}>
-                        <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>
-                            🛒 Ready to place order!
-                        </p>
-                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 12px' }}>
-                            Payment: {msg.paymentMethod?.toUpperCase()} · Platform: {msg.platform}<br/>
-                            Do you want to place this order?
-                        </p>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <button
-                                onClick={async () => {
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: '🛒 Placing your order...',
-                                        timestamp: m.timestamp
-                                    } : m));
-
-                                    const result = await window.buddyAgent.checkoutStep({
-                                        type: `${msg.platform.toLowerCase()}_place_order`
-                                    });
-
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: result.success
-                                            ? `🎉 ${result.message || 'Order placed successfully!'}\n\nCheck your email for confirmation!`
-                                            : `⚠️ ${result.error || 'Could not place order. Please click Place Order in the browser.'}`,
-                                        timestamp: m.timestamp
-                                    } : m));
-                                }}
-                                style={{
-                                    flex: 1, padding: '9px 0', borderRadius: 8,
-                                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                                    background: 'linear-gradient(135deg, rgba(52,211,153,0.3), rgba(59,130,246,0.2))',
-                                    border: '0.5px solid rgba(52,211,153,0.5)',
-                                    color: 'rgba(200,255,230,0.95)',
-                                    letterSpacing: '0.03em'
-                                }}
-                            >
-                                ✅ YES — Place Order
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: '❌ Order cancelled. Your cart is saved — you can order later!',
-                                        timestamp: m.timestamp
-                                    } : m));
-                                }}
-                                style={{
-                                    flex: 1, padding: '9px 0', borderRadius: 8,
-                                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                                    background: 'rgba(239,68,68,0.1)',
-                                    border: '0.5px solid rgba(239,68,68,0.3)',
-                                    color: 'rgba(255,180,180,0.9)',
-                                    letterSpacing: '0.03em'
-                                }}
-                            >
-                                ❌ NO — Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        if (msg.role === 'agent-product-approval') {
-            return (
-                <ProductApprovalCard
-                    key={index}
-                    products={msg.products}
-                    currentIndex={msg.currentIndex || 0}
-                    onApprove={async (product) => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: `Great choice! Adding "${product.title?.slice(0, 40)}" (Rs. ${product.price}) to cart...`,
-                            timestamp: m.timestamp
-                        } : m));
-
-                        const cartResult = await window.buddyAgent.checkoutStep({
-                            type: 'amazon_add_to_cart',
-                            url: product.url
-                        });
-
-                        if (!cartResult.success) {
-                            setMessages(prev => [...prev, {
-                                role: 'buddy',
-                                text: `Add to cart failed: ${cartResult.error}`,
-                                timestamp: Date.now()
-                            }]);
-                            return;
-                        }
-
-                        setMessages(prev => [...prev, {
-                            role: 'agent-pre-checkout',
-                            platform: msg.agentAction?.platform || 'Amazon',
-                            timestamp: Date.now()
-                        }]);
-                    }}
-                    onSkip={() => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            ...m,
-                            currentIndex: (m.currentIndex || 0) + 1
-                        } : m));
-                    }}
-                    onCancel={() => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: 'Order cancelled.',
-                            timestamp: m.timestamp
-                        } : m));
-                    }}
-                />
-            );
-        }
-
-        if (msg.type === 'system') {
-            if (msg.text && msg.text.includes("Select payment method:")) {
-                return (
-                    <div key={index} style={{ padding: 12, borderRadius: 12, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: 8, maxWidth: '85%' }}>
-                        <p style={{ color: 'white', fontSize: 13, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 16 }}>💳</span>
-                            Select Payment Method
-                        </p>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            {['COD', 'UPI', 'CARD'].map(opt => (
-                                <button key={opt} onClick={() => handlePaymentSelection(index, opt)} style={{ padding: '8px 16px', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', cursor: 'pointer', fontSize: 12, flex: 1 }}>
-                                    {opt}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                );
-            }
-
-            return (
-                <div key={index} style={{ padding: 8, marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
-                    <span style={{ padding: '4px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 16, fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                        {msg.text}
-                    </span>
-                </div>
-            );
-        }
-
-        if (msg.role === 'agent-login-request') {
-            return (
-                <div key={index} style={{ padding: 12, borderRadius: 12, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: 8, maxWidth: '85%' }}>
-                    <p style={{ color: 'white', fontSize: 13, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 16 }}>🔐</span>
-                        Login Required
-                    </p>
-                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, margin: '0 0 12px' }}>
-                        Amazon login requires your input. Please click below when you're ready to open the browser and proceed to the login page.
-                    </p>
-                    <button onClick={() => handleLegacyLoginApproval(index)} style={{ padding: '8px 16px', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', cursor: 'pointer', fontSize: 12, width: '100%' }}>
-                        Proceed to login
-                    </button>
-                </div>
-            );
-        }
-
-        if (msg.role === 'agent-pre-checkout') {
-            return (
-                <PreCheckoutCard
-                    key={index}
-                    platform={msg.platform}
-                    onConfirm={async ({ questions, other }) => {
-                        let responseText = 'Proceeding to checkout!';
-                        if (questions.length > 0 || other) {
-                            const qMap = {
-                                return: 'Return Policy: Most Amazon items have 7-30 day return window. Check product page for specifics.',
-                                cancel: 'Cancellation: You can cancel before shipment from Your Orders page.',
-                                warranty: 'Warranty: Check product description or contact seller.',
-                                delivery: 'Delivery: Usually 2-5 business days. Check pincode availability.',
-                                genuine: 'Authenticity: Look for "Sold by Amazon" or authorized sellers.',
-                                cod: 'COD: Available for most items. Will be shown at checkout.'
-                            };
-                            const answers = questions.map(q => qMap[q] || '').filter(Boolean);
-                            if (other) answers.push(`Other: "${other}" - Please verify this directly on Amazon.`);
-                            responseText = answers.join('\n\n') + '\n\nProceeding to checkout now!';
-                        }
-
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy', text: responseText, timestamp: m.timestamp
-                        } : m));
-
-                        await new Promise(res => setTimeout(res, 1000));
-                        const checkoutResult = await window.buddyAgent.checkoutStep({ type: 'amazon_goto_checkout' });
-
-                        if (!checkoutResult.success) {
-                            setMessages(prev => [...prev, { role: 'buddy', text: checkoutResult.error, timestamp: Date.now() }]);
-                            return;
-                        }
-
-                        if (checkoutResult.needsLogin) {
-                            setMessages(prev => [...prev, {
-                                role: 'agent-await-login',
-                                platform: msg.platform,
-                                isFirstLogin: false,
-                                timestamp: Date.now()
-                            }]);
-                        } else {
-                            setMessages(prev => [...prev, {
-                                role: 'agent-payment',
-                                platform: msg.platform,
-                                timestamp: Date.now()
-                            }]);
-                        }
-                    }}
-                    onCancel={() => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy', text: 'Checkout cancelled. Your cart is saved!', timestamp: m.timestamp
-                        } : m));
-                    }}
-                />
-            );
-        }
-
-        if (msg.role === 'agent-await-login') {
-            return (
-                <AgentAwaitLoginCard
-                    key={index}
-                    platform={msg.platform}
-                    isFirstLogin={msg.isFirstLogin}
-                    paymentInfo={msg.paymentInfo}
-                    onLoginDetected={async () => {
-                        // Replace login-wait card with a status message
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: '✅ Login detected! Searching for your item now...',
-                            timestamp: m.timestamp
-                        } : m));
-
-                        // Resolve agentAction — prefer msg.agentAction, fall back to currentAction
-                        const agentAction = msg.agentAction || currentAction || {};
-                        const query = agentAction.query || '';
-                        const platform = msg.platform || agentAction.platform || 'Amazon';
-
-                        if (msg.isFirstLogin && agentAction.type) {
-                            // Search now that we are logged in
-                            const searchResult = await window.buddyAgent.execute({
-                                ...agentAction,
-                                type: agentAction.type || 'amazon_search'
-                            });
-
-                            if (!searchResult || !searchResult.success) {
-                                if (searchResult?.budgetExceeded) {
-                                    setMessages(prev => [...prev, {
-                                        role: 'agent-rebudget',
-                                        action: agentAction,
-                                        originalBudget: searchResult.originalBudget,
-                                        cheapestAvailable: searchResult.cheapestAvailable,
-                                        cheapestTitle: searchResult.cheapestTitle,
-                                        timestamp: Date.now()
-                                    }]);
-                                } else {
-                                    setMessages(prev => [...prev, {
-                                        role: 'buddy',
-                                        text: `⚠️ Search failed: ${searchResult?.error || 'No products found. Please try again.'}`,
-                                        timestamp: Date.now()
-                                    }]);
-                                }
-                                return;
-                            }
-
-                            // No products returned
-                            if (!searchResult.products || searchResult.products.length === 0) {
-                                setMessages(prev => [...prev, {
-                                    role: 'buddy',
-                                    text: `⚠️ Couldn't find products for "${query}". Try a different search.`,
-                                    timestamp: Date.now()
-                                }]);
-                                return;
-                            }
-
-                            // Show found count, then product card
-                            setMessages(prev => [...prev, {
-                                role: 'buddy',
-                                text: `🔍 Found ${searchResult.products.length} product${searchResult.products.length !== 1 ? 's' : ''} for "${query}". Select one below:`,
-                                timestamp: Date.now()
-                            }]);
-
-                            setMessages(prev => [...prev, {
-                                role: 'agent-product-approval',
-                                products: searchResult.products,
-                                currentIndex: 0,
-                                agentAction,
-                                timestamp: Date.now()
-                            }]);
-                        } else {
-                            // Post-login for checkout (login required mid-flow) — go to payment
-                            setMessages(prev => [...prev, {
-                                role: 'agent-payment',
-                                platform,
-                                timestamp: Date.now()
-                            }]);
-                        }
-                    }}
-                    onCancel={() => {
-                        setMessages(prev => prev.map((m, idx) => idx === index ? {
-                            role: 'buddy',
-                            text: 'Cancelled.',
-                            timestamp: m.timestamp
-                        } : m));
-                    }}
-                />
-            );
-        }
-
-        if (msg.role === 'agent-place-order') {
-            return (
-                <div key={index} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
-                    <div style={{
-                        width: 20, height: 20, borderRadius: '50%',
-                        background: 'rgba(52,211,153,0.12)',
-                        border: '0.5px solid rgba(52,211,153,0.3)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0, marginTop: 2
-                    }}>
-                        <Sparkles size={9} style={{ color: 'rgba(52,211,153,0.8)' }} />
-                    </div>
-                    <div style={{
-                        maxWidth: '88%', borderRadius: '16px 16px 16px 4px',
-                        background: 'linear-gradient(135deg, rgba(52,211,153,0.08), rgba(99,102,241,0.06))',
-                        border: '0.5px solid rgba(52,211,153,0.25)',
-                        padding: '12px 14px'
-                    }}>
-                        <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>
-                            Proceed to payment?
-                        </p>
-                        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 10px' }}>
-                            Payment: {msg.paymentMethod?.toUpperCase()} · Platform: {msg.platform}
-                        </p>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                            <button
-                                onClick={async () => {
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: '🛒 Processing payment & placing your order...',
-                                        timestamp: m.timestamp
-                                    } : m));
-                                    const result = await window.buddyAgent.checkoutStep({
-                                        type: `${msg.platform.toLowerCase()}_place_order`
-                                    });
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: result.success
-                                            ? `🎉 ${result.message || 'Payment confirmed & order placed!'}\n\nCheck your email for confirmation!`
-                                            : `⚠️ ${result.error || 'Could not place order automatically. Please confirm payment manually.'}`,
-                                        timestamp: m.timestamp
-                                    } : m));
-                                }}
-                                style={{
-                                    flex: 1, padding: '8px 0', borderRadius: 8,
-                                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                                    background: 'linear-gradient(135deg, rgba(52,211,153,0.25), rgba(59,130,246,0.2))',
-                                    border: '0.5px solid rgba(52,211,153,0.4)',
-                                    color: 'rgba(200,255,230,0.95)',
-                                    transition: 'all 0.2s ease'
-                                }}
-                            >
-                                ✅ Yes, Proceed to Payment
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setMessages(prev => prev.map((m, idx) => idx === index ? {
-                                        role: 'buddy',
-                                        text: '✅ Everything is set up! Complete the order manually in the browser.',
-                                        timestamp: m.timestamp
-                                    } : m));
-                                }}
-                                style={{
-                                    padding: '8px 14px', borderRadius: 8, fontSize: 12,
-                                    background: 'rgba(255,255,255,0.04)',
-                                    border: '0.5px solid rgba(255,255,255,0.1)',
-                                    color: 'rgba(255,255,255,0.4)', cursor: 'pointer'
-                                }}
-                            >
-                                Do it myself
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // ── agent-confirm: "Here's what I'll do" platform action card ────────────────
-        if (msg.role === 'agent-confirm') {
-            const act = msg.action || {};
-            return (
-                <div key={index} className="message-enter" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                    {/* Avatar */}
-                    <div style={{
-                        width: 20, height: 20, borderRadius: '50%',
-                        background: 'rgba(99,102,241,0.12)',
-                        border: '0.5px solid rgba(99,102,241,0.3)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0, marginTop: 2
-                    }}>
-                        <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.9)' }} />
-                    </div>
-                    {/* Card body */}
-                    <div style={{
-                        maxWidth: '88%',
-                        borderRadius: '16px 16px 16px 4px',
-                        background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.07))',
-                        border: '0.5px solid rgba(99,102,241,0.25)',
-                        padding: '12px 14px'
-                    }}>
-                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, margin: '0 0 8px', letterSpacing: '0.04em' }}>
-                            Here’s what I’ll do:
-                        </p>
-                        {/* Platform action row */}
-                        <div style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '8px 10px', borderRadius: 10,
-                            background: 'rgba(255,255,255,0.04)',
-                            border: '0.5px solid rgba(255,255,255,0.07)',
-                            marginBottom: 10
-                        }}>
-                            <span style={{ fontSize: 20, flexShrink: 0 }}>{act.emoji || '✨'}</span>
-                            <div>
-                                <p style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, fontWeight: 600, margin: '0 0 2px' }}>
-                                    {act.platform || 'Automation'}
-                                </p>
-                                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>
-                                    {act.description || ''}
-                                </p>
-                            </div>
-                        </div>
-                        {/* Optional sub-note */}
-                        <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, margin: 0 }}>
-                            ⚡ Buddy will open {act.platform || 'the browser'} and navigate for you
-                        </p>
-                        {msg.timestamp && (
-                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.14)', display: 'block', marginTop: 4 }}>
-                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                        )}
-                    </div>
-                </div>
-            );
-        }
-
-        // ── agent-status / automation / status → AutomationCard ────────────────────
-        if (msg.role === 'agent-status' || msg.type === 'automation' || msg.type === 'status') {
-            return (
-                <AutomationCard
-                    key={index}
-                    index={index}
-                    icon={msg.icon || (msg.type === 'status' ? '⚡' : '✨')}
-                    title={msg.title}
-                    description={msg.description}
-                    text={msg.text}
-                    timestamp={msg.timestamp}
-                />
-            );
-        }
-
-        // ── component type → render embedded React component ────────────────────
-        if (msg.type === 'component' && msg.component) {
-            const EmbeddedComponent = msg.component;
-            return <EmbeddedComponent key={index} {...(msg.props || {})} />;
-        }
-
-        const isUser = msg.role === 'user';
-        return (
-            <div key={index} className={`message-enter flex gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                {!isUser && (
-                    <div
-                        className="flex items-center justify-center rounded-full shrink-0 mt-0.5"
-                        style={{ width: 20, height: 20, background: 'rgba(59,130,246,0.12)', border: '0.5px solid rgba(59,130,246,0.3)' }}
-                    >
-                        <Sparkles size={9} style={{ color: 'rgba(96,165,250,0.9)' }} />
-                    </div>
-                )}
-                <div className="flex flex-col">
-                    <div style={{ position: 'relative' }} className="message-bubble-wrapper">
-                        <style>{`.message-bubble-wrapper:hover .copy-btn { opacity: 1; }`}</style>
-                        <div
-                            style={{
-                                maxWidth: '88%',
-                                padding: '8px 12px',
-                                borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                                fontSize: 13,
-                                lineHeight: 1.7,
-                                whiteSpace: 'pre-wrap',
-                                background: isUser ? 'linear-gradient(135deg, rgba(59,130,246,0.28) 0%, rgba(99,102,241,0.22) 50%, rgba(139,92,246,0.18) 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.03) 100%)',
-                                border: isUser ? '0.5px solid rgba(99,102,241,0.45)' : '0.5px solid rgba(255,255,255,0.09)',
-                                color: isUser ? 'rgba(220,225,255,0.95)' : 'rgba(255,255,255,0.75)',
-                                backdropFilter: 'blur(8px)',
-                                boxShadow: isUser ? '0 4px 16px rgba(59,130,246,0.15), inset 0 1px 0 rgba(255,255,255,0.08)' : '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)'
-                            }}
-                        >
-                            {isUser ? msg.text : (
-                                <div style={{ borderLeft: '2px solid rgba(99,102,241,0.4)', paddingLeft: 8 }}>
-                                    {msg.text}
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            className="copy-btn"
-                            onClick={() => navigator.clipboard.writeText(msg.text)}
-                            style={{
-                                position: 'absolute',
-                                top: -8,
-                                right: msg.role === 'user' ? 0 : 'auto',
-                                left: msg.role === 'buddy' ? 0 : 'auto',
-                                opacity: 0,
-                                transition: 'opacity 0.2s ease',
-                                background: 'rgba(30,30,40,0.9)',
-                                border: '0.5px solid rgba(255,255,255,0.12)',
-                                borderRadius: 6,
-                                padding: '2px 7px',
-                                fontSize: 10,
-                                color: 'rgba(255,255,255,0.5)',
-                                cursor: 'pointer',
-                                backdropFilter: 'blur(8px)'
-                            }}>
-                            copy
-                        </button>
-                    </div>
-                    {msg.timestamp && (
-                        <span style={{
-                            fontSize: 10,
-                            color: 'rgba(255,255,255,0.18)',
-                            marginTop: 3,
-                            display: 'block',
-                            textAlign: msg.role === 'user' ? 'right' : 'left',
-                            paddingLeft: msg.role === 'buddy' ? 4 : 0,
-                            paddingRight: msg.role === 'user' ? 4 : 0,
-                        }}>
-                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                    )}
-                </div>
-            </div>
-        );
-            });
-        } catch (err) {
-            console.error('[Buddy] Message render error:', err, safeMessages);
-            return [
-                <div key="message-render-error" style={{ padding: '12px', borderRadius: 12, background: 'rgba(239,68,68,0.12)', border: '0.5px solid rgba(239,68,68,0.3)', color: 'rgba(255,204,204,0.95)', fontSize: 13 }}>
-                    ⚠️ Display error — check console for details.
-                </div>
-            ];
-        }
-    }, [safeMessages, setMessages, setPendingAgentAction, setChatOpen, setSidebarVisible]);
 
     return (
         <div
@@ -2965,7 +1901,95 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
             </div>
 
             <div className="overflow-y-auto px-5 pb-4 flex flex-col gap-[12px]" style={{ maxHeight: 370 }}>
-                {messageList}
+                {messages.map((msg, i) => {
+
+                    // USER MESSAGE
+                    if (msg.role === "user") {
+                        return (
+                            <div key={i} style={{ textAlign: "right", margin: "8px 0" }}>
+                                <div style={{
+                                    display: "inline-block",
+                                    padding: "8px 12px",
+                                    borderRadius: "12px",
+                                    background: "#4f46e5",
+                                    color: "#fff",
+                                    fontSize: 13
+                                }}>
+                                    {msg.text}
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // AGENT CONFIRM (KEEP YOUR EXISTING UI)
+                    if (msg.role === "agent-confirm") {
+                        return <AgentConfirmCard key={i} msg={msg} index={i} setMessages={setMessages} setCurrentAction={setCurrentAction} handleApprove={handleApprove} />;
+                    }
+
+                    // LOGIN WAIT
+                    if (msg.role === "await-login") {
+                        return (
+                            <div key={i} style={{ margin: 10, background: 'rgba(59,130,246,0.1)', padding: 12, borderRadius: 12, border: '0.5px solid rgba(59,130,246,0.3)' }}>
+                                <p style={{ fontSize: 13, marginBottom: 10 }}>Login to Amazon and click confirm</p>
+                                <button
+                                    onClick={() => handleManualLoginDetected()}
+                                    style={{
+                                        padding: '6px 16px',
+                                        borderRadius: 8,
+                                        background: '#4f46e5',
+                                        color: '#fff',
+                                        fontSize: 12,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    I've logged in
+                                </button>
+                            </div>
+                        );
+                    }
+
+                    // PRODUCTS (Modified to use our better UI)
+                    if (msg.role === "product-selection") {
+                        return (
+                            <div key={i} style={{ padding: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '0.5px solid rgba(255,255,255,0.1)' }}>
+                                <p style={{ color: "#aaa", fontSize: 12, marginBottom: 8 }}>Select product:</p>
+                                {msg.items?.map((item, idx) => (
+                                    <div key={idx}
+                                        onClick={() => window.buddyAgent.execute({
+                                            type: "open_product",
+                                            url: item.link
+                                        })}
+                                        style={{
+                                            padding: 10,
+                                            marginBottom: 6,
+                                            borderRadius: 8,
+                                            background: "rgba(255,255,255,0.05)",
+                                            border: '0.5px solid rgba(255,255,255,0.1)',
+                                            cursor: "pointer",
+                                            fontSize: 12
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                    >
+                                        <div style={{ color: '#fff', fontWeight: 500 }}>{item.title}</div>
+                                        <div style={{ color: "rgba(167,243,208,0.9)", marginTop: 2 }}>₹{item.price}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    }
+
+                    // DEFAULT (buddy)
+                    return (
+                        <div key={i} style={{ margin: 8, color: "rgba(255,255,255,0.6)", fontSize: 13, display: 'flex', gap: 8 }}>
+                            <div style={{ width: 20, height: 20, flexShrink: 0, marginTop: 2, background: 'rgba(59,130,246,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Sparkles size={10} color="#60a5fa" />
+                            </div>
+                            <div>{msg.text || "..." }</div>
+                        </div>
+                    );
+
+                })}
                 {(isLoading || isTyping) && (
                     <div className="message-enter" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                         <div className="typing-avatar" style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
@@ -3232,6 +2256,108 @@ const Spotlight = React.memo(() => {
     // Promise resolver for chat-based budget input
     const resolveUserInputRef = useRef(null);
 
+    // Handles user clicking a product from the product-selection card
+    const handleApprove = async (action) => {
+        try {
+            console.log("🔥 APPROVE CLICKED", action);
+
+            if (!action) {
+                alert("No action found");
+                return;
+            }
+
+            // Save action
+            setCurrentAction(action);
+
+            // CLEAR any old flow noise
+            setMessages(prev => [
+                ...prev,
+                {
+                    role: "buddy",
+                    text: "Opening login page...",
+                    timestamp: Date.now()
+                }
+            ]);
+
+            // 🚨 FORCE LOGIN PAGE OPEN
+            await window.buddyAgent.execute({
+                type: "force_login_amazon"
+            });
+
+            // SHOW LOGIN UI
+            setMessages(prev => [
+                ...prev,
+                {
+                    role: "await-login",
+                    timestamp: Date.now()
+                }
+            ]);
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleManualLoginDetected = async () => {
+        try {
+            console.log("✅ MANUAL LOGIN CONFIRMED");
+
+            if (!currentAction) {
+                alert("No action stored");
+                return;
+            }
+
+            // SEARCH AFTER LOGIN ONLY
+            const result = await window.buddyAgent.execute({
+                type: "search_amazon",
+                query: currentAction.query || "shoes"
+            });
+
+            console.log("SEARCH RESULT:", result);
+
+            if (!result || !result.items) {
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        role: "buddy",
+                        text: "No products found",
+                        timestamp: Date.now()
+                    }
+                ]);
+                return;
+            }
+
+            // SHOW PRODUCTS
+            setMessages(prev => [
+                ...prev,
+                {
+                    role: "product-selection",
+                    items: result.items.slice(0, 5),
+                    timestamp: Date.now()
+                }
+            ]);
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleProductSelect = async (item) => {
+        try {
+            setMessages(prev => [...prev, {
+                role: 'buddy',
+                text: `🛒 Selecting: ${item.title || 'product'}...`,
+                timestamp: Date.now()
+            }]);
+            await window.buddyAgent.execute({
+                type: 'select_product',
+                url: item.url || item.link
+            });
+        } catch (err) {
+            console.error('Product select failed:', err);
+        }
+    };
+
     useEffect(() => {
         messagesRef.current = messages;
         setHistory(messages);
@@ -3286,11 +2412,15 @@ const Spotlight = React.memo(() => {
             setMessages(prev => [...prev, msg]);
             window.focus();
         };
-        
-        const sLogin = () => { setMessages(p => [...p, { role: 'strict-login-popup', timestamp: Date.now() }]); setChatOpen(true); };
-        const sProd = (prod) => { setMessages(p => [...p, { role: 'strict-show-product', product: prod, timestamp: Date.now() }]); setChatOpen(true); };
-        const sPay = () => { setMessages(p => [...p, { role: 'strict-ask-payment', timestamp: Date.now() }]); setChatOpen(true); };
+        const sLogin   = () => { setMessages(p => [...p, { role: 'strict-login-popup',   timestamp: Date.now() }]); setChatOpen(true); };
+        const sProd    = (prod) => { setMessages(p => [...p, { role: 'strict-show-product', product: prod, timestamp: Date.now() }]); setChatOpen(true); };
+        const sPay     = () => { setMessages(p => [...p, { role: 'strict-ask-payment',    timestamp: Date.now() }]); setChatOpen(true); };
         const sConfirm = () => { setMessages(p => [...p, { role: 'strict-final-approval', timestamp: Date.now() }]); setChatOpen(true); };
+        
+        
+        
+        
+        
 
         window.api.on("login-required", loginReqHandler);
         window.api.on("add-message", addMsgHandler);
@@ -3603,6 +2733,7 @@ const Spotlight = React.memo(() => {
     // Safety guard — should never be null due to useState initializer, but protects render
     if (!messages || !Array.isArray(messages)) return null;
 
+    console.log("MESSAGES:", messages);
     return (
         <>
             <style>{`
@@ -3747,7 +2878,7 @@ const Spotlight = React.memo(() => {
                     }} />
                     <div className="w-full flex flex-col">
                         <ChatHeader />
-                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages || []} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} setCurrentAction={setCurrentAction} setAgentStep={setAgentStep} />
+                        <ChatPanel chatEndRef={chatEndRef} chatOpen={chatOpen} isLoading={isLoading} isTyping={isTyping} messages={messages || []} onClose={handleChatClose} setMessages={setMessages} setChatOpen={setChatOpen} setSidebarVisible={setSidebarVisible} setPendingAgentAction={setPendingAgentAction} setCurrentAction={setCurrentAction} setAgentStep={setAgentStep} handleApprove={handleApprove} handleManualLoginDetected={handleManualLoginDetected} />
                         {(messages || []).length === 0 && !chatOpen && (
                             <div style={{
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',

@@ -484,6 +484,15 @@ async function resumeAgentAction(page, action, checkLoginBreak) {
                 await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
                 break;
 
+            case 'select_product': {
+                const productUrl = action.url;
+                if (!productUrl) { console.error('[Agent] select_product: no url'); break; }
+                console.log('[Agent] Navigating to selected product:', productUrl);
+                await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+                await new Promise(r => setTimeout(r, 2000));
+                break;
+            }
+
             case 'ola_open':
                 if (action.destination) {
                     await page.waitForSelector('input[placeholder*="destination"], input[placeholder*="Where to"]', { timeout: 5000 }).catch(()=>{});
@@ -739,6 +748,60 @@ async function executeAgentAction(action) {
 
     try {
         console.log('[Agent] Executing action type:', action.type);
+
+        // 🚨 ADDED: FORCE FLOW CASES
+        if (action.type === "force_login_amazon") {
+            await page.goto("https://www.amazon.in/ap/signin", {
+                waitUntil: "networkidle2"
+            });
+            isAutomationRunning = false;
+            return { success: true };
+        }
+
+        if (action.type === "search_amazon") {
+            await page.goto(`https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`, {
+                waitUntil: "networkidle2"
+            });
+
+            // RETURN DUMMY PRODUCTS FOR NOW (prevents crash)
+            isAutomationRunning = false;
+            return {
+                items: [
+                    { title: "Shoe 1", price: 1999, link: "https://www.amazon.in/" },
+                    { title: "Shoe 2", price: 2499, link: "https://www.amazon.in/" }
+                ]
+            };
+        }
+
+        if (action.type === "open_product") {
+            await page.goto(action.url, { waitUntil: "networkidle2" });
+            isAutomationRunning = false;
+            return { success: true };
+        }
+
+        // ── open_login: navigate directly to platform login page ─────────
+        if (action.type === 'open_login') {
+            try {
+                const p = await getBrowserPage();
+                if (action.platform === 'Amazon') {
+                    await p.goto('https://www.amazon.in/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.in%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=inflex&openid.mode=checkid_setup&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                } else if (action.platform === 'Flipkart') {
+                    await p.goto('https://www.flipkart.com/account/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                } else {
+                    await p.goto('https://www.' + action.platform.toLowerCase() + '.in', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                }
+                await new Promise(r => setTimeout(r, 1500));
+                const url = p.url();
+                const alreadyLoggedIn = !url.includes('signin') && !url.includes('login') && !url.includes('ap/');
+                console.log('[Agent] open_login result - url:', url, 'alreadyLoggedIn:', alreadyLoggedIn);
+                isAutomationRunning = false;
+                return { success: true, alreadyLoggedIn };
+            } catch (err) {
+                isAutomationRunning = false;
+                return { success: false, error: err.message };
+            }
+        }
+
         // ── STEP 1: Login check ─────────────────────────────────────────────
         if (action.type === 'amazon_login_goto') {
             console.log('[Agent] STEP 1: Opening Amazon login page');
