@@ -6,7 +6,9 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "prestart": "taskkill /F /IM electron.exe 2>nul || exit 0",
+    "dev-full": "start cmd /c npm run dev & npm start",
+    "cleanup": "taskkill /F /IM electron.exe /T 2>nul & taskkill /F /IM python.exe /T 2>nul & exit 0",
+    "prestart": "npm run cleanup",
     "start": "npm run electron",
     "build": "vite build",
     "lint": "eslint .",
