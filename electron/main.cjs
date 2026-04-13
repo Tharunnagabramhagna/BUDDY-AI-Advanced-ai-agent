@@ -750,28 +750,21 @@ async function executeAgentAction(action) {
         console.log('[Agent] Executing action type:', action.type);
 
         // 🚨 ADDED: FORCE FLOW CASES
-        if (action.type === "force_login_amazon") {
-            await page.goto("https://www.amazon.in/ap/signin", {
-                waitUntil: "networkidle2"
+        // amazon_start: open homepage → click Sign In (NO long OpenID URLs)
+        if (action.type === "amazon_start") {
+            await page.goto("https://www.amazon.in/", {
+                waitUntil: "domcontentloaded",
+                timeout: 30000
             });
+            await page.waitForSelector('#nav-link-accountList', { timeout: 10000 });
+            await page.click('#nav-link-accountList');
+            await new Promise(r => setTimeout(r, 2000));
+            global.activePage = page;
             isAutomationRunning = false;
             return { success: true };
         }
 
-        if (action.type === "search_amazon") {
-            await page.goto(`https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`, {
-                waitUntil: "networkidle2"
-            });
 
-            // RETURN DUMMY PRODUCTS FOR NOW (prevents crash)
-            isAutomationRunning = false;
-            return {
-                items: [
-                    { title: "Shoe 1", price: 1999, link: "https://www.amazon.in/" },
-                    { title: "Shoe 2", price: 2499, link: "https://www.amazon.in/" }
-                ]
-            };
-        }
 
         if (action.type === "open_product") {
             await page.goto(action.url, { waitUntil: "networkidle2" });
@@ -833,32 +826,32 @@ async function executeAgentAction(action) {
         if (action.type === 'amazon_poll_login') {
             try {
                 if (!global.activePage || global.activePage.isClosed()) {
+                    isAutomationRunning = false;
                     return { success: true, isLoggedIn: false };
                 }
                 const p = global.activePage;
-                const url = p.url();
-                
-                // Check URL — if not on signin page, logged in
-                const isLoggedInUrl = !url.includes('/ap/signin') && !url.includes('/ap/') && 
-                                   (url.includes('amazon.in') && !url.includes('signin'));
-                
-                // Also check for account element
-                if (!isLoggedInUrl) {
-                    const hasAccount = await p.evaluate(() => {
-                        const el = document.querySelector('#nav-link-accountList');
-                        return el && !el.textContent.includes('Sign in');
-                    }).catch(() => false);
-                    
-                    console.log('[Agent] Poll login - URL:', url, 'hasAccount:', hasAccount);
-                    if (hasAccount) agentState = 'searching';
-                    return { success: true, isLoggedIn: hasAccount, currentUrl: url };
-                }
-                
-                console.log('[Agent] Poll login - logged in detected via URL');
-                agentState = 'searching';
-                return { success: true, isLoggedIn: true, currentUrl: url };
+
+                // Navigate to homepage to get a reliable login check
+                await p.goto('https://www.amazon.in/', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 20000
+                });
+                await new Promise(r => setTimeout(r, 1500));
+
+                const loginStatus = await p.evaluate(() => {
+                    const el = document.querySelector('#nav-link-accountList-nav-line-1');
+                    if (!el) return false;
+                    const text = el.textContent.trim().toLowerCase();
+                    return text.length > 0 && !text.includes('sign in') && !text.includes('hello, sign in');
+                }).catch(() => false);
+
+                console.log('[Agent] Poll login result:', loginStatus, '| URL:', p.url());
+                if (loginStatus) agentState = 'searching';
+                isAutomationRunning = false;
+                return { success: true, isLoggedIn: loginStatus };
             } catch (err) {
-                return { success: false, error: err.message };
+                isAutomationRunning = false;
+                return { success: false, isLoggedIn: false, error: err.message };
             }
         }
 
@@ -871,9 +864,6 @@ async function executeAgentAction(action) {
             if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
             
             const budget = action.budget ? parseFloat(action.budget) : null;
-            if (!budget || isNaN(budget)) {
-                return { success: false, error: 'Budget is required. Please enter a valid budget.' };
-            }
             
             const searchUrl = `https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`;
             console.log('[Agent] Navigating to search:', searchUrl);
@@ -947,6 +937,46 @@ async function executeAgentAction(action) {
                 return { success: true };
             } catch (err) {
                 return { success: false, error: 'Preview failed: ' + err.message };
+            }
+        }
+
+        if (action.type === 'amazon_scroll_to_product') {
+            try {
+                const p = global.activePage;
+                if (!p || p.isClosed()) { isAutomationRunning = false; return { success: false }; }
+
+                const idx = action.index || 0;
+
+                await p.evaluate((targetIdx) => {
+                    // Clear previous highlights
+                    document.querySelectorAll('[data-buddy-active]').forEach(el => {
+                        el.style.outline = '';
+                        el.style.boxShadow = '';
+                        el.style.borderRadius = '';
+                        el.removeAttribute('data-buddy-active');
+                    });
+
+                    const cards = document.querySelectorAll('[data-component-type="s-search-result"]');
+                    const card = cards[targetIdx];
+                    if (!card) return;
+
+                    // Scroll into view
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                    // Highlight
+                    card.style.outline = '2.5px solid rgba(99,102,241,0.85)';
+                    card.style.boxShadow = '0 0 0 6px rgba(99,102,241,0.18), 0 8px 32px rgba(99,102,241,0.2)';
+                    card.style.borderRadius = '8px';
+                    card.style.transition = 'all 0.35s ease';
+                    card.setAttribute('data-buddy-active', 'true');
+                }, idx);
+
+                await new Promise(r => setTimeout(r, 700));
+                isAutomationRunning = false;
+                return { success: true };
+            } catch (err) {
+                isAutomationRunning = false;
+                return { success: false, error: err.message };
             }
         }
 
@@ -1539,6 +1569,10 @@ async function executeAgentAction(action) {
 }
 
 async function executeMinimalAgentAction(action) {
+    // DISABLED — use executeAgentAction with type: "amazon_search" instead
+    console.warn("⚠️ executeMinimalAgentAction is disabled");
+    return { success: false, error: "Disabled — use executeAgentAction" };
+    /* ORIGINAL CODE BELOW — kept for reference
     console.log("🚀 EXECUTE AGENT:", sanitizeActionForLog(action));
 
     if (!action) {
@@ -1663,6 +1697,7 @@ async function executeMinimalAgentAction(action) {
         success: true,
         stage: "added_to_cart"
     };
+    /* END DISABLED */
 }
 
 
@@ -2104,7 +2139,7 @@ ipcMain.on("start-login-watch", async (event) => {
     }
 });
 
-ipcMain.on("start-strict-amazon-flow", async (event, query) => {
+ipcMain.on("start-strict-amazon-flow-DISABLED", async (event, query) => {
     try {
         const page = await getBrowserPage();
         global.activePage = page;

@@ -1421,12 +1421,15 @@ const PreCheckoutCard = React.memo(({ platform, onConfirm, onCancel }) => {
 const LeftSidebar = React.memo(({ sessions = [], activeSession, onSelect, onNew }) => (
     <div style={{
         position: 'fixed', left: 20, top: '50%', transform: 'translateY(-50%)',
-        width: 160, zIndex: 60,
+        width: 140,          // ← narrower
+        maxHeight: 220,      // ← hard cap so it never overlaps chat
+        zIndex: 60,
         background: 'rgba(15,15,20,0.75)',
         backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
         border: '0.5px solid rgba(255,255,255,0.09)',
-        borderRadius: 18, padding: 12,
-        boxShadow: '0 24px 56px rgba(0,0,0,0.5)'
+        borderRadius: 18, padding: 10,
+        boxShadow: '0 24px 56px rgba(0,0,0,0.5)',
+        overflow: 'hidden'   // ← prevent bleed
     }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: '0.06em' }}>HISTORY</span>
@@ -1436,7 +1439,7 @@ const LeftSidebar = React.memo(({ sessions = [], activeSession, onSelect, onNew 
                 fontSize: 11, cursor: 'pointer'
             }}>+ New</button>
         </div>
-        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 120, overflowY: 'auto' }}>
             {(sessions || []).length === 0 && (
                 <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, textAlign: 'center', margin: '20px 0' }}>No history yet</p>
             )}
@@ -1679,7 +1682,7 @@ const AgentConfirmCard = ({ msg, index, setMessages, setCurrentAction, handleApp
                         <button
                             onClick={() => {
                                 console.log("BUTTON CLICKED");
-                                handleApprove(msg.action);
+                                handleApprove({ ...msg.action, budget: budget || null });
                             }}
                             style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12, fontWeight: 500, background: 'linear-gradient(135deg, rgba(59,130,246,0.3), rgba(99,102,241,0.25))', border: '0.5px solid rgba(99,102,241,0.4)', color: 'rgba(214,221,255,0.95)', cursor: 'pointer', transition: 'all 0.2s ease' }}
                         >
@@ -1929,52 +1932,324 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                     // LOGIN WAIT
                     if (msg.role === "await-login") {
                         return (
-                            <div key={i} style={{ margin: 10, background: 'rgba(59,130,246,0.1)', padding: 12, borderRadius: 12, border: '0.5px solid rgba(59,130,246,0.3)' }}>
-                                <p style={{ fontSize: 13, marginBottom: 10 }}>Login to Amazon and click confirm</p>
-                                <button
-                                    onClick={() => handleManualLoginDetected()}
-                                    style={{
-                                        padding: '6px 16px',
-                                        borderRadius: 8,
-                                        background: '#4f46e5',
-                                        color: '#fff',
-                                        fontSize: 12,
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    I've logged in
-                                </button>
+                            <div key={i} style={{
+                                display: 'flex', justifyContent: 'flex-start',
+                                gap: 8, alignItems: 'flex-start'
+                            }}>
+                                <div style={{
+                                    width: 20, height: 20, borderRadius: '50%',
+                                    background: 'rgba(59,130,246,0.12)',
+                                    border: '0.5px solid rgba(59,130,246,0.35)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0, marginTop: 2
+                                }}>
+                                    <Sparkles size={9} style={{ color: 'rgba(96,165,250,0.9)' }} />
+                                </div>
+                                <div style={{
+                                    maxWidth: '88%', width: '100%',
+                                    borderRadius: '16px 16px 16px 4px',
+                                    background: 'linear-gradient(135deg, rgba(15,15,22,0.95), rgba(20,14,30,0.92))',
+                                    border: '0.5px solid rgba(59,130,246,0.25)',
+                                    padding: '14px'
+                                }}>
+                                    {/* Header */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                        <span style={{ fontSize: 18 }}>🔐</span>
+                                        <div>
+                                            <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: 0 }}>
+                                                Sign in to Amazon
+                                            </p>
+                                            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: 0 }}>
+                                                Log in in the browser window, then confirm below
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Step list */}
+                                    <div style={{
+                                        padding: '10px 12px', borderRadius: 8, marginBottom: 12,
+                                        background: 'rgba(255,255,255,0.03)',
+                                        border: '0.5px solid rgba(255,255,255,0.07)'
+                                    }}>
+                                        {[
+                                            '1️⃣ Look at the Chrome window that just opened',
+                                            '2️⃣ Enter your Amazon email and password',
+                                            '3️⃣ Complete any OTP or captcha if asked',
+                                            '4️⃣ Once logged in, click the button below'
+                                        ].map((step, idx) => (
+                                            <p key={idx} style={{
+                                                color: 'rgba(255,255,255,0.5)', fontSize: 11,
+                                                margin: '0 0 4px', lineHeight: 1.5
+                                            }}>{step}</p>
+                                        ))}
+                                    </div>
+
+                                    {/* Confirm button */}
+                                    <button
+                                        onClick={() => handleManualLoginDetected()}
+                                        style={{
+                                            width: '100%', padding: '10px 0',
+                                            borderRadius: 10, fontSize: 13, fontWeight: 600,
+                                            cursor: 'pointer',
+                                            background: 'linear-gradient(135deg, rgba(59,130,246,0.35), rgba(99,102,241,0.28))',
+                                            border: '0.5px solid rgba(99,102,241,0.5)',
+                                            color: 'rgba(214,221,255,0.95)',
+                                            letterSpacing: '0.02em',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: '0 4px 16px rgba(59,130,246,0.15)'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59,130,246,0.5), rgba(99,102,241,0.4))'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59,130,246,0.35), rgba(99,102,241,0.28))'}
+                                    >
+                                        ✅ I've Logged In — Continue
+                                    </button>
+                                </div>
                             </div>
                         );
                     }
 
-                    // PRODUCTS (Modified to use our better UI)
+                    // PRODUCTS (One-by-one carousel)
                     if (msg.role === "product-selection") {
+                        const items = msg.items || [];
+                        if (!items.length) return null;
+
+                        // Use msg.currentIndex as the pointer — default 0
+                        const currentIdx = typeof msg.currentIndex === 'number' ? msg.currentIndex : 0;
+                        const product = items[currentIdx];
+                        if (!product) {
+                            return (
+                                <div key={i} style={{
+                                    padding: '12px 14px', borderRadius: 12,
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '0.5px solid rgba(255,255,255,0.08)',
+                                    color: 'rgba(255,255,255,0.4)', fontSize: 12, textAlign: 'center'
+                                }}>
+                                    ✅ All products reviewed.
+                                </div>
+                            );
+                        }
+
+                        const goNext = () => {
+                            const nextIdx = currentIdx + 1;
+                            setMessages(prev => prev.map((m, mIdx) =>
+                                mIdx === i ? { ...m, currentIndex: nextIdx } : m
+                            ));
+                            // Scroll browser to next product
+                            window.buddyAgent?.checkoutStep?.({
+                                type: 'amazon_scroll_to_product',
+                                index: nextIdx
+                            }).catch(() => {});
+                        };
+
+                        const handleBuy = async () => {
+                            setMessages(prev => prev.map((m, mIdx) =>
+                                mIdx === i ? {
+                                    role: 'buddy',
+                                    text: `🛒 Adding "${(product.title || 'item').slice(0, 40)}..." to cart`,
+                                    timestamp: Date.now()
+                                } : m
+                            ));
+                            const result = await window.buddyAgent?.checkoutStep?.({
+                                type: 'amazon_add_to_cart',
+                                url: product.url
+                            });
+                            setMessages(prev => [...prev, {
+                                role: 'buddy',
+                                text: result?.success
+                                    ? '✅ Added to cart! Proceeding to checkout...'
+                                    : '❌ ' + (result?.error || 'Failed to add to cart'),
+                                timestamp: Date.now()
+                            }]);
+                        };
+
+                        const handleCancel = () => {
+                            setMessages(prev => prev.map((m, mIdx) =>
+                                mIdx === i ? {
+                                    role: 'buddy',
+                                    text: '❌ Search cancelled. Let me know if you need anything else!',
+                                    timestamp: Date.now()
+                                } : m
+                            ));
+                        };
+
+                        // Scroll browser to current product (first render only)
+                        if (!msg._browserScrolled) {
+                            setMessages(prev => prev.map((m, mIdx) =>
+                                mIdx === i ? { ...m, _browserScrolled: true } : m
+                            ));
+                            window.buddyAgent?.checkoutStep?.({
+                                type: 'amazon_scroll_to_product',
+                                index: currentIdx
+                            }).catch(() => {});
+                        }
+
                         return (
-                            <div key={i} style={{ padding: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '0.5px solid rgba(255,255,255,0.1)' }}>
-                                <p style={{ color: "#aaa", fontSize: 12, marginBottom: 8 }}>Select product:</p>
-                                {msg.items?.map((item, idx) => (
-                                    <div key={idx}
-                                        onClick={() => window.buddyAgent.execute({
-                                            type: "open_product",
-                                            url: item.link
-                                        })}
-                                        style={{
-                                            padding: 10,
-                                            marginBottom: 6,
-                                            borderRadius: 8,
-                                            background: "rgba(255,255,255,0.05)",
-                                            border: '0.5px solid rgba(255,255,255,0.1)',
-                                            cursor: "pointer",
-                                            fontSize: 12
-                                        }}
-                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                                    >
-                                        <div style={{ color: '#fff', fontWeight: 500 }}>{item.title}</div>
-                                        <div style={{ color: "rgba(167,243,208,0.9)", marginTop: 2 }}>₹{item.price}</div>
+                            <div key={i} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+
+                                {/* Buddy avatar dot */}
+                                <div style={{
+                                    width: 20, height: 20, borderRadius: '50%',
+                                    background: 'rgba(99,102,241,0.12)',
+                                    border: '0.5px solid rgba(99,102,241,0.3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0, marginTop: 2
+                                }}>
+                                    <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
+                                </div>
+
+                                {/* Product card */}
+                                <div style={{
+                                    maxWidth: '88%', width: '100%',
+                                    borderRadius: '16px 16px 16px 4px',
+                                    background: 'linear-gradient(135deg, rgba(14,14,22,0.98), rgba(20,12,32,0.96))',
+                                    border: '0.5px solid rgba(99,102,241,0.3)',
+                                    overflow: 'hidden',
+                                    boxShadow: '0 8px 32px rgba(99,102,241,0.15)'
+                                }}>
+
+                                    {/* Header bar */}
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '9px 14px',
+                                        background: 'rgba(99,102,241,0.08)',
+                                        borderBottom: '0.5px solid rgba(255,255,255,0.05)'
+                                    }}>
+                                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: 500 }}>
+                                            🛍️ Product {currentIdx + 1} of {items.length}
+                                        </span>
+                                        {/* Progress dots */}
+                                        <div style={{ display: 'flex', gap: 5 }}>
+                                            {items.map((_, di) => (
+                                                <div key={di} style={{
+                                                    width: 6, height: 6, borderRadius: '50%',
+                                                    background: di === currentIdx
+                                                        ? 'rgba(99,102,241,1)'
+                                                        : di < currentIdx
+                                                            ? 'rgba(52,211,153,0.7)'
+                                                            : 'rgba(255,255,255,0.15)',
+                                                    transition: 'all 0.3s ease'
+                                                }} />
+                                            ))}
+                                        </div>
                                     </div>
-                                ))}
+
+                                    {/* Product image */}
+                                    <div style={{
+                                        width: '100%', height: 170,
+                                        background: '#fff',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        overflow: 'hidden'
+                                    }}>
+                                        {product.image
+                                            ? <img src={product.image} alt={product.title || 'Product'}
+                                                style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                                            : <span style={{ color: '#ccc', fontSize: 13 }}>No image available</span>
+                                        }
+                                    </div>
+
+                                    {/* Product info */}
+                                    <div style={{ padding: '12px 14px' }}>
+
+                                        {/* Title */}
+                                        <p style={{
+                                            color: 'rgba(255,255,255,0.88)', fontSize: 12,
+                                            fontWeight: 500, margin: '0 0 8px', lineHeight: 1.45
+                                        }}>
+                                            {(product.title || 'Unknown product').slice(0, 100)}
+                                            {(product.title || '').length > 100 ? '...' : ''}
+                                        </p>
+
+                                        {/* Price + Rating */}
+                                        <div style={{
+                                            display: 'flex', alignItems: 'center',
+                                            justifyContent: 'space-between', marginBottom: 10
+                                        }}>
+                                            <span style={{
+                                                color: 'rgba(96,165,250,0.95)', fontSize: 20,
+                                                fontWeight: 700, letterSpacing: '-0.02em'
+                                            }}>
+                                                {product.price
+                                                    ? (String(product.price).includes('₹')
+                                                        ? product.price
+                                                        : `₹${Number(product.price).toLocaleString('en-IN')}`)
+                                                    : 'N/A'}
+                                            </span>
+                                            {product.rating && (
+                                                <div style={{
+                                                    display: 'flex', alignItems: 'center', gap: 4,
+                                                    padding: '3px 9px', borderRadius: 100,
+                                                    background: 'rgba(250,204,21,0.08)',
+                                                    border: '0.5px solid rgba(250,204,21,0.22)'
+                                                }}>
+                                                    <span style={{ fontSize: 11 }}>⭐</span>
+                                                    <span style={{ color: 'rgba(250,204,21,0.9)', fontSize: 11, fontWeight: 600 }}>
+                                                        {product.rating}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Live browser indicator */}
+                                        <div style={{
+                                            display: 'flex', alignItems: 'center', gap: 6,
+                                            padding: '5px 10px', borderRadius: 8, marginBottom: 12,
+                                            background: 'rgba(52,211,153,0.05)',
+                                            border: '0.5px solid rgba(52,211,153,0.15)'
+                                        }}>
+                                            <div style={{
+                                                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                                                background: 'rgba(52,211,153,0.9)',
+                                                boxShadow: '0 0 6px rgba(52,211,153,0.8)',
+                                                animation: 'pulse 1.5s ease-in-out infinite'
+                                            }} />
+                                            <span style={{ color: 'rgba(52,211,153,0.65)', fontSize: 10 }}>
+                                                Highlighted in Amazon browser window
+                                            </span>
+                                        </div>
+
+                                        {/* Action buttons */}
+                                        <div style={{ display: 'flex', gap: 6 }}>
+                                            {/* Buy */}
+                                            <button onClick={handleBuy} style={{
+                                                flex: 2, padding: '9px 0', borderRadius: 10,
+                                                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                                background: 'linear-gradient(135deg, rgba(52,211,153,0.22), rgba(16,185,129,0.16))',
+                                                border: '0.5px solid rgba(52,211,153,0.4)',
+                                                color: 'rgba(167,243,208,0.95)',
+                                                transition: 'all 0.2s ease'
+                                            }}>
+                                                ✓ Buy This
+                                            </button>
+
+                                            {/* Next — only if more products */}
+                                            {currentIdx < items.length - 1 && (
+                                                <button onClick={goNext} style={{
+                                                    flex: 1, padding: '9px 0', borderRadius: 10,
+                                                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    border: '0.5px solid rgba(255,255,255,0.1)',
+                                                    color: 'rgba(255,255,255,0.55)',
+                                                    transition: 'all 0.2s ease'
+                                                }}>
+                                                    Next ⏭
+                                                </button>
+                                            )}
+
+                                            {/* Cancel */}
+                                            <button onClick={handleCancel} style={{
+                                                padding: '9px 11px', borderRadius: 10,
+                                                fontSize: 12, cursor: 'pointer',
+                                                background: 'rgba(239,68,68,0.05)',
+                                                border: '0.5px solid rgba(239,68,68,0.18)',
+                                                color: 'rgba(248,113,113,0.6)',
+                                                transition: 'all 0.2s ease'
+                                            }}>
+                                                ✕
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         );
                     }
@@ -2266,25 +2541,70 @@ const Spotlight = React.memo(() => {
                 return;
             }
 
-            // Save action
-            setCurrentAction(action);
+            // Save action (including budget)
+            setCurrentAction({ ...action, budget: action.budget || null });
 
             // CLEAR any old flow noise
             setMessages(prev => [
                 ...prev,
                 {
                     role: "buddy",
-                    text: "Opening login page...",
+                    text: "Checking login status...",
                     timestamp: Date.now()
                 }
             ]);
 
-            // 🚨 FORCE LOGIN PAGE OPEN
-            await window.buddyAgent.execute({
-                type: "force_login_amazon"
+            // 1. Check if already logged in FIRST
+            const loginCheck = await window.buddyAgent.checkoutStep({
+                type: "amazon_poll_login"
             });
 
-            // SHOW LOGIN UI
+            if (loginCheck?.isLoggedIn) {
+                // Already logged in — skip login step, go straight to search
+                setMessages(prev => [...prev, {
+                    role: "buddy",
+                    text: `✅ Already logged in! Searching Amazon for "${action.query}"...`,
+                    timestamp: Date.now()
+                }]);
+                
+                const result = await window.buddyAgent.checkoutStep({
+                    type: "amazon_search",
+                    query: action.query,
+                    budget: action.budget || null
+                });
+                
+                if (!result || !result.success) {
+                    setMessages(prev => [...prev, {
+                        role: "buddy",
+                        text: result?.error || "No products found. Try again.",
+                        timestamp: Date.now()
+                    }]);
+                    return;
+                }
+
+                // SHOW PRODUCTS
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        role: "product-selection",
+                        items: (result.products || []).slice(0, 5).map(p => ({
+                            title: p.title   || 'Unknown product',
+                            price: p.price   || 'N/A',
+                            image: p.image   || null,
+                            rating: p.rating || null,
+                            url:   p.url     || null,
+                        })),
+                        currentIndex: 0,
+                        _browserScrolled: false,
+                        timestamp: Date.now()
+                    }
+                ]);
+                return;
+            }
+
+            // Not logged in — open Amazon and show login card
+            await window.buddyAgent.checkoutStep({ type: "amazon_start" });
+            
             setMessages(prev => [
                 ...prev,
                 {
@@ -2300,45 +2620,84 @@ const Spotlight = React.memo(() => {
 
     const handleManualLoginDetected = async () => {
         try {
-            console.log("✅ MANUAL LOGIN CONFIRMED");
+            console.log("✅ MANUAL LOGIN CONFIRMED — verifying...");
 
             if (!currentAction) {
-                alert("No action stored");
+                setMessages(prev => [...prev, {
+                    role: "buddy",
+                    text: "⚠️ No action stored. Please start over.",
+                    timestamp: Date.now()
+                }]);
                 return;
             }
 
-            // SEARCH AFTER LOGIN ONLY
-            const result = await window.buddyAgent.execute({
-                type: "search_amazon",
-                query: currentAction.query || "shoes"
+            // STEP 1: Verify login is actually complete — do NOT proceed blindly
+            const loginCheck = await window.buddyAgent.checkoutStep({
+                type: "amazon_poll_login"
             });
 
-            console.log("SEARCH RESULT:", result);
+            console.log("LOGIN CHECK:", loginCheck);
 
-            if (!result || !result.items) {
+            if (!loginCheck || !loginCheck.isLoggedIn) {
+                // Stay on login step — show message + keep await-login button
                 setMessages(prev => [
-                    ...prev,
+                    ...prev.filter(m => m.role !== "await-login"),
                     {
                         role: "buddy",
-                        text: "No products found",
+                        text: "⚠️ Not logged in yet. Please complete login in the browser, then click confirm again.",
                         timestamp: Date.now()
-                    }
+                    },
+                    { role: "await-login", timestamp: Date.now() }
                 ]);
                 return;
             }
 
-            // SHOW PRODUCTS
-            setMessages(prev => [
-                ...prev,
-                {
-                    role: "product-selection",
-                    items: result.items.slice(0, 5),
+            // STEP 2: Login confirmed — run real search
+            setMessages(prev => [...prev, {
+                role: "buddy",
+                text: `🔍 Searching Amazon for "${currentAction.query}"...`,
+                timestamp: Date.now()
+            }]);
+
+            const result = await window.buddyAgent.checkoutStep({
+                type: "amazon_search",
+                query: currentAction.query || "product",
+                budget: currentAction.budget || null
+            });
+
+            console.log("SEARCH RESULT:", result);
+
+            if (!result || !result.success) {
+                setMessages(prev => [...prev, {
+                    role: "buddy",
+                    text: result?.error || "No products found. Try again.",
                     timestamp: Date.now()
-                }
-            ]);
+                }]);
+                return;
+            }
+
+            // STEP 3: Show real products
+            setMessages(prev => [...prev, {
+                role: "product-selection",
+                items: (result.products || []).slice(0, 5).map(p => ({
+                    title: p.title   || 'Unknown product',
+                    price: p.price   || 'N/A',
+                    image: p.image   || null,
+                    rating: p.rating || null,
+                    url:   p.url     || null,
+                })),
+                currentIndex: 0,
+                _browserScrolled: false,
+                timestamp: Date.now()
+            }]);
 
         } catch (err) {
-            console.error(err);
+            console.error("handleManualLoginDetected error:", err);
+            setMessages(prev => [...prev, {
+                role: "buddy",
+                text: "Something went wrong: " + err.message,
+                timestamp: Date.now()
+            }]);
         }
     };
 
