@@ -728,7 +728,7 @@ const Sidebar = React.memo(({ visible }) => (
                 </div>
             ))}
             <div style={{ height: '0.5px', background: 'rgba(255,255,255,0.08)', margin: '10px 0' }} />
-            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontFamily: 'monospace' }}>gemini-1.5-flash</p>
+            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, fontFamily: 'monospace' }}>qwen3.5:2b (Local)</p>
         </div>
     </div>
 ));
@@ -1082,6 +1082,7 @@ const AgentAwaitLoginCard = React.memo(({ platform, isFirstLogin = false, paymen
                 setDetected(true);
                 setPolling(false);
                 onLoginDetected();
+                window.electronAPI?.positionSide?.();
             }
         }, 2000); // Poll every 2 seconds
 
@@ -1095,6 +1096,7 @@ const AgentAwaitLoginCard = React.memo(({ platform, isFirstLogin = false, paymen
     };
 
     useEffect(() => {
+        window.electronAPI?.positionSide?.();
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, []);
 
@@ -1232,7 +1234,10 @@ const AgentProductApprovalCard = React.memo(({ message, onSubmit, onCancel }) =>
     if (!p) return <p style={{ color: 'white' }}>Loading...</p>;
     
     return (
-        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+        <div style={{
+            display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start',
+            // compact layout for side-pop mode
+        }}>
             <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', border: '0.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
                 <Sparkles size={9} style={{ color: 'rgba(139,92,246,0.8)' }} />
             </div>
@@ -1690,7 +1695,6 @@ const AgentConfirmCard = ({ msg, index, setMessages, setCurrentAction, handleApp
                         </button>
                         <button
                             onClick={() => {
-                                setPendingAgentAction?.(null);
                                 setMessages(prev => prev.map((m, idx) => idx === index ? { role: 'buddy', text: 'Cancelled! Let me know if you need anything else.', timestamp: m.timestamp } : m));
                             }}
                             style={{ padding: '7px 14px', borderRadius: 8, fontSize: 12, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s ease' }}
@@ -2053,13 +2057,34 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                 type: 'amazon_add_to_cart',
                                 url: product.url
                             });
-                            setMessages(prev => [...prev, {
-                                role: 'buddy',
-                                text: result?.success
-                                    ? '✅ Added to cart! Proceeding to checkout...'
-                                    : '❌ ' + (result?.error || 'Failed to add to cart'),
-                                timestamp: Date.now()
-                            }]);
+                            
+                            if (result?.success || result?.addedToCart) {
+                                setMessages(prev => [...prev, {
+                                    role: 'buddy',
+                                    text: '✅ Added to cart! Preparing checkout...',
+                                    timestamp: Date.now()
+                                }]);
+                                
+                                const checkoutResult = await window.buddyAgent?.checkoutStep?.({ type: 'amazon_goto_checkout' });
+                                
+                                if (checkoutResult?.needsLogin) {
+                                    setMessages(prev => [...prev, { role: 'await-login', timestamp: Date.now() }]);
+                                } else if (checkoutResult?.success) {
+                                    setMessages(prev => [...prev, { role: 'pre-checkout', platform: 'Amazon', timestamp: Date.now() }]);
+                                } else {
+                                    setMessages(prev => [...prev, {
+                                        role: 'buddy',
+                                        text: '⚠️ ' + (checkoutResult?.error || 'Failed to proceed to checkout'),
+                                        timestamp: Date.now()
+                                    }]);
+                                }
+                            } else {
+                                setMessages(prev => [...prev, {
+                                    role: 'buddy',
+                                    text: '❌ ' + (result?.error || 'Failed to add to cart'),
+                                    timestamp: Date.now()
+                                }]);
+                            }
                         };
 
                         const handleCancel = () => {
@@ -2251,6 +2276,198 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                     </div>
                                 </div>
                             </div>
+                        );
+                    }
+
+                    if (msg.role === 'pre-checkout') {
+                        return (
+                            <AgentPreCheckoutCard
+                                key={i}
+                                platform={msg.platform || 'Amazon'}
+                                onSubmit={async () => {
+                                    setMessages(prev => prev.map((m, idx) =>
+                                        idx === i
+                                            ? { role: 'buddy', text: '💳 Great! Choose your payment method:', timestamp: Date.now() }
+                                            : m
+                                    ));
+                                    setMessages(prev => [...prev, {
+                                        role: 'payment-select',
+                                        platform: msg.platform || 'Amazon',
+                                        timestamp: Date.now()
+                                    }]);
+                                }}
+                                onCancel={() => {
+                                    setMessages(prev => prev.map((m, idx) =>
+                                        idx === i
+                                            ? { role: 'buddy', text: '❌ Checkout cancelled. You can complete it manually in the browser.', timestamp: Date.now() }
+                                            : m
+                                    ));
+                                }}
+                            />
+                        );
+                    }
+
+                    if (msg.role === 'payment-select') {
+                        return (
+                            <PaymentOptionsCard
+                                key={i}
+                                platform={msg.platform || 'Amazon'}
+                                onSelect={async ({ method }) => {
+                                    setMessages(prev => prev.map((m, idx) =>
+                                        idx === i
+                                            ? { role: 'buddy', text: `⚡ Selecting ${method.toUpperCase()} payment...`, timestamp: Date.now() }
+                                            : m
+                                    ));
+                                    const result = await window.buddyAgent.checkoutStep({
+                                        type: 'amazon_select_payment',
+                                        method: method
+                                    });
+                                    if (result?.success) {
+                                        setMessages(prev => [...prev, {
+                                            role: 'final-confirm',
+                                            timestamp: Date.now()
+                                        }]);
+                                    } else {
+                                        setMessages(prev => [...prev, {
+                                            role: 'buddy',
+                                            text: '⚠️ Could not auto-select payment. Please select it manually in the browser, then confirm below.',
+                                            timestamp: Date.now()
+                                        }, {
+                                            role: 'final-confirm',
+                                            timestamp: Date.now()
+                                        }]);
+                                    }
+                                }}
+                                onCancel={() => {
+                                    setMessages(prev => prev.map((m, idx) =>
+                                        idx === i
+                                            ? { role: 'buddy', text: '❌ Payment cancelled.', timestamp: Date.now() }
+                                            : m
+                                    ));
+                                }}
+                            />
+                        );
+                    }
+
+                    if (msg.role === 'final-confirm') {
+                        return (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
+                                <div style={{
+                                    width: 20, height: 20, borderRadius: '50%',
+                                    background: 'rgba(52,211,153,0.12)',
+                                    border: '0.5px solid rgba(52,211,153,0.35)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0, marginTop: 2
+                                }}>
+                                    <Sparkles size={9} style={{ color: 'rgba(52,211,153,0.9)' }} />
+                                </div>
+                                <div style={{
+                                    maxWidth: '88%', width: '100%',
+                                    borderRadius: '16px 16px 16px 4px',
+                                    background: 'linear-gradient(135deg, rgba(14,14,22,0.98), rgba(20,12,32,0.96))',
+                                    border: '0.5px solid rgba(52,211,153,0.25)',
+                                    padding: '14px'
+                                }}>
+                                    <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 500, margin: '0 0 6px' }}>
+                                        🏁 Ready to place your order
+                                    </p>
+                                    <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 11, margin: '0 0 14px', lineHeight: 1.5 }}>
+                                        Payment is selected. Buddy will now click "Place Order" in the browser. This is your last chance to cancel.
+                                    </p>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button
+                                            onClick={async () => {
+                                                setMessages(prev => prev.map((m, idx) =>
+                                                    idx === i
+                                                        ? { role: 'buddy', text: '⚡ Placing your order...', timestamp: Date.now() }
+                                                        : m
+                                                ));
+                                                const result = await window.buddyAgent.checkoutStep({
+                                                    type: 'amazon_place_order'
+                                                });
+                                                setMessages(prev => [...prev, {
+                                                    role: 'buddy',
+                                                    text: result?.orderPlaced
+                                                        ? '🎉 Order placed successfully! Check your email for confirmation.'
+                                                        : result?.message || '⚠️ Could not confirm order. Please check the browser.',
+                                                    timestamp: Date.now()
+                                                }]);
+                                            }}
+                                            style={{
+                                                flex: 1, padding: '9px 0', borderRadius: 10,
+                                                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                                background: 'linear-gradient(135deg, rgba(52,211,153,0.22), rgba(16,185,129,0.16))',
+                                                border: '0.5px solid rgba(52,211,153,0.4)',
+                                                color: 'rgba(167,243,208,0.95)'
+                                            }}
+                                        >
+                                            ✅ Place Order
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setMessages(prev => prev.map((m, idx) =>
+                                                    idx === i
+                                                        ? { role: 'buddy', text: '❌ Order cancelled. Browser is still open if you want to do it manually.', timestamp: Date.now() }
+                                                        : m
+                                                ));
+                                            }}
+                                            style={{
+                                                padding: '9px 14px', borderRadius: 10, fontSize: 12,
+                                                cursor: 'pointer',
+                                                background: 'rgba(239,68,68,0.06)',
+                                                border: '0.5px solid rgba(239,68,68,0.2)',
+                                                color: 'rgba(248,113,113,0.7)'
+                                            }}
+                                        >
+                                            ✕ Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    if (msg.role === 'rebudget') {
+                        return (
+                            <AgentRebudgetCard
+                                key={i}
+                                action={msg.action}
+                                originalBudget={msg.originalBudget}
+                                cheapestAvailable={msg.cheapestAvailable}
+                                cheapestTitle={msg.cheapestTitle}
+                                onSubmit={async (newBudget) => {
+                                    setMessages(prev => prev.map((m, idx) =>
+                                        idx === i
+                                            ? { role: 'buddy', text: `🔍 Searching again with budget ₹${newBudget}...`, timestamp: Date.now() }
+                                            : m
+                                    ));
+                                    const updatedAction = { ...msg.action, budget: newBudget };
+                                    setCurrentAction(updatedAction);
+                                    const result = await window.buddyAgent.checkoutStep({
+                                        type: 'amazon_search',
+                                        query: updatedAction.query,
+                                        budget: newBudget
+                                    });
+                                    if (!result?.success) {
+                                        setMessages(prev => [...prev, {
+                                            role: 'rebudget',
+                                            action: updatedAction,
+                                            originalBudget: newBudget,
+                                            cheapestAvailable: result?.cheapestAvailable,
+                                            cheapestTitle: result?.cheapestTitle,
+                                            timestamp: Date.now()
+                                        }]);
+                                    } else {
+                                        setMessages(prev => [...prev, {
+                                            role: 'product-selection',
+                                            items: (result.products || []).slice(0, 5),
+                                            currentIndex: 0,
+                                            _browserScrolled: false,
+                                            timestamp: Date.now()
+                                        }]);
+                                    }
+                                }}
+                            />
                         );
                     }
 
@@ -2573,6 +2790,18 @@ const Spotlight = React.memo(() => {
                     budget: action.budget || null
                 });
                 
+                if (result?.budgetExceeded) {
+                    setMessages(prev => [...prev, {
+                        role: 'rebudget',
+                        action: action,
+                        originalBudget: result.originalBudget,
+                        cheapestAvailable: result.cheapestAvailable,
+                        cheapestTitle: result.cheapestTitle,
+                        timestamp: Date.now()
+                    }]);
+                    return;
+                }
+
                 if (!result || !result.success) {
                     setMessages(prev => [...prev, {
                         role: "buddy",
@@ -2667,6 +2896,18 @@ const Spotlight = React.memo(() => {
 
             console.log("SEARCH RESULT:", result);
 
+            if (result?.budgetExceeded) {
+                setMessages(prev => [...prev, {
+                    role: 'rebudget',
+                    action: currentAction,
+                    originalBudget: result.originalBudget,
+                    cheapestAvailable: result.cheapestAvailable,
+                    cheapestTitle: result.cheapestTitle,
+                    timestamp: Date.now()
+                }]);
+                return;
+            }
+
             if (!result || !result.success) {
                 setMessages(prev => [...prev, {
                     role: "buddy",
@@ -2734,6 +2975,18 @@ const Spotlight = React.memo(() => {
     useEffect(() => {
         loadingRef.current = isLoading;
     }, [isLoading]);
+
+    useEffect(() => {
+        // Reposition window when flow changes
+        const isSidePhase = messages.some(m => ['await-login', 'product-selection'].includes(m.role));
+        const isCenterPhase = messages.some(m => ['final-confirm'].includes(m.role));
+
+        if (isCenterPhase) {
+            window.electronAPI?.positionCenter?.();
+        } else if (isSidePhase) {
+            window.electronAPI?.positionSide?.();
+        }
+    }, [messages]);
 
     useEffect(() => {
         if (!window.electronAPI) return;
@@ -3000,8 +3253,9 @@ const Spotlight = React.memo(() => {
             const buddyMessage = { role: 'buddy', text: response, timestamp: Date.now() };
             setMessages((prev) => [...prev, buddyMessage]);
             addMessage(buddyMessage);
-        } catch {
-            const fallbackMessage = { role: 'buddy', text: 'AI unavailable. Check your Gemini API key in .env', timestamp: Date.now() };
+        } catch (err) {
+            console.error(err);
+            const fallbackMessage = { role: 'buddy', text: `AI unavailable (Ollama). Error: ${err.message}`, timestamp: Date.now() };
             setMessages((prev) => [...prev, fallbackMessage]);
             addMessage(fallbackMessage);
         } finally {

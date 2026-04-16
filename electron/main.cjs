@@ -9,7 +9,6 @@ const fs = require("fs")
 const http = require("http")
 const { exec } = require("child_process")
 const { spawn } = require("child_process")
-const { GoogleGenerativeAI } = require("@google/generative-ai")
 const puppeteer = require('puppeteer-core')
 
 let browser = null;
@@ -816,6 +815,12 @@ async function executeAgentAction(action) {
                     return { success: true, alreadyLoggedIn: true };
                 }
                 
+                // Move window to side so user can see Chrome
+                positionWindowSide();
+                if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
+                    global.mainWindowRef.show();
+                    global.mainWindowRef.focus();
+                }
                 return { success: true, loginPageReady: true };
             } catch (err) {
                 agentState = 'idle';
@@ -990,6 +995,28 @@ async function executeAgentAction(action) {
             await p.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await new Promise(res => setTimeout(res, 2000));
             
+            // Smooth scroll entire product page so user can see all details
+            console.log('[Agent] Scrolling product page for user review...');
+            await p.evaluate(async () => {
+                await new Promise((resolve) => {
+                    let totalHeight = 0;
+                    const distance = 400;
+                    const delay = 120;
+                    const timer = setInterval(() => {
+                        window.scrollBy(0, distance);
+                        totalHeight += distance;
+                        if (totalHeight >= document.body.scrollHeight - window.innerHeight) {
+                            clearInterval(timer);
+                            // Scroll back to top
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            setTimeout(resolve, 600);
+                        }
+                    }, delay);
+                });
+            });
+            await new Promise(res => setTimeout(res, 800));
+            console.log('[Agent] Page scroll complete — proceeding to Add to Cart');
+
             try {
                 await p.waitForSelector('#add-to-cart-button', { timeout: 10000 });
                 await p.click('#add-to-cart-button');
@@ -1222,59 +1249,196 @@ async function executeAgentAction(action) {
 
         if (action.type === 'amazon_select_payment') {
             console.log('[Agent] STEP 5: Selecting payment:', action.method);
-            agentState = 'payment';
             const p = global.activePage;
             if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
-            
+
             const url = p.url();
             if (url.includes('signin') || url.includes('ap/')) {
-                return { success: false, error: 'Still on login page. Please complete login first.' };
+                return { success: false, error: 'Still on login page. Complete login first.' };
             }
-            
-            await new Promise(res => setTimeout(res, 2000));
-            
+
+            console.log('[Agent] Current URL before payment:', url);
+            await new Promise(res => setTimeout(res, 3000));
+
+            // Step A: Select the payment radio button
             const termMap = {
-                cod: ['Cash on Delivery', 'Pay on Delivery'],
-                upi: ['UPI', 'BHIM'],
-                card: ['Credit', 'Debit', 'Credit/Debit'],
+                cod: ['Cash on Delivery', 'Pay on Delivery', 'POD', 'cash'],
+                upi: ['UPI', 'BHIM UPI', 'Net Banking/UPI'],
+                card: ['Credit or debit card', 'Credit/Debit', 'Debit card', 'Credit card'],
                 netbanking: ['Net Banking', 'NetBanking'],
-                amazonpay: ['Amazon Pay']
+                amazonpay: ['Amazon Pay', 'Amazon pay balance']
             };
-            
+
             const terms = termMap[action.method] || [];
-            await p.evaluate((terms) => {
-                const all = Array.from(document.querySelectorAll('label, div, span, input'));
-                for (const term of terms) {
-                    const el = all.find(e => (e.textContent || '').includes(term));
-                    if (el) { el.scrollIntoView({ block: 'center' }); el.click(); return term; }
+            
+            const selectionResult = await p.evaluate((terms) => {
+                // Try to find and click radio input first
+                const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
+                for (const input of inputs) {
+                    const label = input.closest('label') ||
+                                  document.querySelector(`label[for="${input.id}"]`) ||
+                                  input.parentElement;
+                    const labelText = label?.textContent || '';
+                    for (const term of terms) {
+                        if (labelText.toLowerCase().includes(term.toLowerCase())) {
+                            input.scrollIntoView({ block: 'center' });
+                            input.click();
+                            return { clicked: true, method: 'radio', text: labelText.trim().slice(0, 40) };
+                        }
+                    }
                 }
-                return null;
+
+                // Fallback: find by label/div text
+                const allEls = Array.from(document.querySelectorAll('label, div[class*="payment"], span[class*="payment"], div[class*="pmts"]'));
+                for (const el of allEls) {
+                    const text = el.textContent || '';
+                    for (const term of terms) {
+                        if (text.toLowerCase().includes(term.toLowerCase()) && el.offsetWidth > 0) {
+                            el.scrollIntoView({ block: 'center' });
+                            el.click();
+                            return { clicked: true, method: 'label', text: text.trim().slice(0, 40) };
+                        }
+                    }
+                }
+                return { clicked: false };
             }, terms);
+
+            console.log('[Agent] Payment radio selection:', selectionResult);
+            await new Promise(res => setTimeout(res, 1500));
+
+            // Step B: Handle UPI ID input if needed
+            if (action.method === 'upi' && action.upiId) {
+                try {
+                    await p.waitForSelector('input[placeholder*="UPI"], input[name*="upi"], input[placeholder*="VPA"]', { timeout: 5000 });
+                    const upiInputs = await p.$$('input[placeholder*="UPI"], input[name*="upi"], input[placeholder*="VPA"]');
+                    if (upiInputs.length > 0) {
+                        await upiInputs[0].click({ clickCount: 3 });
+                        await upiInputs[0].type(action.upiId, { delay: 50 });
+                        console.log('[Agent] UPI ID entered');
+                        await new Promise(res => setTimeout(res, 500));
+                    }
+                } catch { console.log('[Agent] No UPI input found'); }
+            }
+
+            // Step C: CRITICAL — Click "Use this payment method" or "Continue" button
+            console.log('[Agent] Looking for "Use this payment method" button...');
             
-            await new Promise(res => setTimeout(res, 1000));
+            const continueButtonTexts = [
+                'Use this payment method',
+                'Use this payment',
+                'Continue',
+                'use this payment method',
+                'Proceed',
+                'Next',
+            ];
+
+            let continueClicked = false;
             
-            // Click Continue
-            await p.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('button,input[type="submit"],a'));
-                const cont = btns.find(b => {
-                    const t = (b.textContent || b.value || '').toLowerCase();
-                    return t.includes('use this payment') || t.includes('continue') || t.includes('use this method');
-                });
-                if (cont) { cont.scrollIntoView({ block: 'center' }); cont.click(); }
+            // Try multiple times with scroll — button may be below fold
+            for (let attempt = 0; attempt < 3 && !continueClicked; attempt++) {
+                continueClicked = await p.evaluate((buttonTexts) => {
+                    // Search all clickable elements
+                    const candidates = Array.from(document.querySelectorAll(
+                        'input[type="submit"], button, a, span.a-button-inner, div.a-button-inner'
+                    ));
+                    
+                    for (const el of candidates) {
+                        const text = (el.value || el.textContent || el.getAttribute('aria-label') || '').trim();
+                        for (const btnText of buttonTexts) {
+                            if (text.toLowerCase().includes(btnText.toLowerCase()) && el.offsetWidth > 0) {
+                                el.scrollIntoView({ block: 'center' });
+                                el.click();
+                                return text.slice(0, 50);
+                            }
+                        }
+                    }
+                    
+                    // Also try Amazon-specific button classes
+                    const amazonBtns = Array.from(document.querySelectorAll(
+                        'input[name*="ppw-widgetEvent:SetPaymentPlanSelectContinueEvent"], span[id*="orderSummaryPrimaryActionBtn"] input, [data-testid="payment-continue-button"], .a-button-primary input, .pmts-submit-btn'
+                    ));
+                    for (const btn of amazonBtns) {
+                        if (btn.offsetWidth > 0) {
+                            btn.scrollIntoView({ block: 'center' });
+                            btn.click();
+                            return 'amazon-primary-btn';
+                        }
+                    }
+                    
+                    return null;
+                }, continueButtonTexts);
+
+                if (!continueClicked) {
+                    console.log(`[Agent] Continue button not found on attempt ${attempt + 1}, scrolling...`);
+                    await p.evaluate(() => {
+                        window.scrollBy(0, 400);
+                        // Extreme fallback: forcefully click ANY primary button on the right side
+                        const checkoutBtn = document.querySelector('input[name="ppw-widgetEvent:SetPaymentPlanSelectContinueEvent"]');
+                        if (checkoutBtn) checkoutBtn.click();
+                    });
+                    await new Promise(res => setTimeout(res, 1000));
+                }
+            }
+
+            console.log('[Agent] Continue button clicked:', continueClicked);
+
+            // Step D: Wait for navigation to final review page
+            try {
+                await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 });
+                console.log('[Agent] Navigation after payment:', p.url());
+            } catch {
+                console.log('[Agent] No navigation detected — may already be on review page');
+            }
+
+            await new Promise(res => setTimeout(res, 2000));
+
+            const finalUrl = p.url();
+            console.log('[Agent] Final URL after payment selection:', finalUrl);
+
+            // Verify we're on a checkout/review page (not still on payment page)
+            const isOnReviewPage = await p.evaluate(() => {
+                const body = document.body.innerText.toLowerCase();
+                const hasPlaceOrder = body.includes('place your order') || body.includes('place order');
+                const hasOrderTotal = body.includes('order total');
+                const hasPlaceOrderBtn = document.querySelector('#submitOrderButtonId') !== null || document.querySelector('input[name="placeYourOrder1"]') !== null;
+                
+                // If payment section is still clearly visible, we haven't navigated
+                const hasPaymentOptions = document.querySelector('input[name="ppw-instrumentRowSelection"]') !== null;
+                
+                return (hasPlaceOrder || hasOrderTotal || hasPlaceOrderBtn) && !hasPaymentOptions;
             });
-            
-            await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-            
-            // Bring Electron window to front
+
+            console.log('[Agent] On order review page:', isOnReviewPage);
+
+            // Bring Buddy window to front for final approval
             if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
+                positionWindowCenter();
                 global.mainWindowRef.show();
                 global.mainWindowRef.focus();
                 global.mainWindowRef.setAlwaysOnTop(true);
                 setTimeout(() => { global.mainWindowRef?.setAlwaysOnTop(false); }, 2000);
             }
-            
-            agentState = 'awaiting_approval';
-            return { success: true, paymentSelected: action.method };
+
+            if (!continueClicked) {
+                return {
+                    success: false,
+                    error: 'Could not find "Use this payment method" button. Please click it manually in the browser.'
+                };
+            }
+
+            if (!isOnReviewPage) {
+                return {
+                    success: false,
+                    error: 'Clicked the button, but page did not advance. Please click "Use this payment method" manually.'
+                };
+            }
+
+            return {
+                success: true,
+                paymentSelected: action.method,
+                onReviewPage: isOnReviewPage,
+                currentUrl: finalUrl
+            };
         }
 
         if (action.type === 'amazon_place_order') {
@@ -1701,10 +1865,6 @@ async function executeMinimalAgentAction(action) {
 }
 
 
-const API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-if (!API_KEY) console.error("ERROR: No Gemini API key found in .env!");
-const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
-console.log("Gemini key loaded:", API_KEY ? API_KEY.substring(0, 8) + "..." : "MISSING");
 
 let mainWindow
 let tray
@@ -1889,6 +2049,42 @@ async function createWindow() {
         isCreatingWindow = false
     }
 }
+
+function positionWindowSide() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const { screen } = require('electron');
+    const display = screen.getPrimaryDisplay();
+    const { width, height } = display.workAreaSize;
+    mainWindow.setBounds({
+        x: width - 420,
+        y: Math.floor(height / 2) - 300,
+        width: 400,
+        height: 600
+    }, true); // true = animate
+}
+
+function positionWindowCenter() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const { screen } = require('electron');
+    const display = screen.getPrimaryDisplay();
+    const { width, height } = display.workAreaSize;
+    mainWindow.setBounds({
+        x: Math.floor(width / 2) - 350,
+        y: Math.floor(height / 2) - 290,
+        width: 700,
+        height: 580
+    }, true);
+}
+
+ipcMain.handle('window-position-side', () => {
+    positionWindowSide();
+    return { success: true };
+});
+
+ipcMain.handle('window-position-center', () => {
+    positionWindowCenter();
+    return { success: true };
+});
 
 function startSTTServer() {
     const pythonScript = path.join(__dirname, "../python/buddy_stt.py")
@@ -2349,20 +2545,37 @@ ipcMain.handle("window-close", () => {
 
 ipcMain.handle("ask-buddy", async (event, prompt, history = []) => {
     try {
-        if (!genAI) {
-            throw new Error("Gemini API key is missing.")
-        }
-
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // Convert Gemini-style history to Ollama-style messages
         const validHistory = (Array.isArray(history) ? history : []).filter(
             m => m && m.role && Array.isArray(m.parts) && m.parts.length > 0 && m.parts[0].text
         );
-        const chat = model.startChat({ history: validHistory });
-        const result = await chat.sendMessage(prompt);
-        return result.response.text();
+        
+        const messages = validHistory.map(m => ({
+            role: m.role === 'model' ? 'assistant' : 'user',
+            content: m.parts[0].text
+        }));
+        
+        messages.push({ role: 'user', content: prompt });
+
+        const response = await fetch('http://127.0.0.1:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'qwen3.5:2b',
+                messages: messages,
+                stream: false
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ollama API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.message.content;
     } catch (error) {
-        console.error("Gemini API Error:", error);
-        throw error;
+        console.error("Ask Buddy (Ollama) Error:", error);
+        return "Sorry, I couldn't connect to Ollama. Make sure it's running locally on port 11434 and 'qwen3.5:2b' is installed!";
     }
 });
 

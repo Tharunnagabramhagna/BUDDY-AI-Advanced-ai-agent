@@ -5,7 +5,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     sendBuddyCommand: (command) => ipcRenderer.send("buddy-command", command),
     closeApp: () => ipcRenderer.send("close-app"),
     onAgentApproval: (cb) => ipcRenderer.on("agent-approval", (_, data) => cb(_, data)),
-    removeAgentApproval: (cb) => ipcRenderer.removeListener("agent-approval", cb)
+    removeAgentApproval: (cb) => ipcRenderer.removeListener("agent-approval", cb),
+    positionSide: () => ipcRenderer.invoke('window-position-side'),
+    positionCenter: () => ipcRenderer.invoke('window-position-center')
 })
 
 contextBridge.exposeInMainWorld("buddyAPI", {

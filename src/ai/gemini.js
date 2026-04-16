@@ -1,14 +1,25 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const API_KEY = "AIzaSyCCV_OhhzO_46f0qtaCKCC2FV1ukh69mRs";
-
-const genAI = new GoogleGenerativeAI(API_KEY);
-
 export async function askBuddy(prompt) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  try {
+    const response = await fetch('http://127.0.0.1:11434/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'qwen3.5:2b',
+        prompt: prompt,
+        stream: false
+      })
+    });
 
-  const result = await model.generateContent(prompt);
-  const response = result.response;
+    if (!response.ok) {
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+    }
 
-  return response.text();
+    const result = await response.json();
+    return result.response;
+  } catch (error) {
+    console.error("Error asking buddy (Ollama):", error);
+    return "Make sure Ollama is running (`ollama serve` or open the Ollama app) and you have the model downloaded (`ollama run qwen3.5:2b`).";
+  }
 }
