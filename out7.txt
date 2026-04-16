@@ -1,5 +1,0 @@
-
-> buddy-ai-temp@0.0.0 electron
-> electron electron/main.cjs
-
-^CTerminate batch job (Y/N)? Terminate batch job (Y/N)? 
