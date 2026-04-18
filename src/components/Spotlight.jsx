@@ -1082,7 +1082,9 @@ const AgentAwaitLoginCard = React.memo(({ platform, isFirstLogin = false, paymen
                 setDetected(true);
                 setPolling(false);
                 onLoginDetected();
-                window.electronAPI?.positionSide?.();
+                setTimeout(() => {
+                    window.electronAPI?.positionCenter?.();
+                }, 400);
             }
         }, 2000); // Poll every 2 seconds
 
@@ -1426,15 +1428,13 @@ const PreCheckoutCard = React.memo(({ platform, onConfirm, onCancel }) => {
 const LeftSidebar = React.memo(({ sessions = [], activeSession, onSelect, onNew }) => (
     <div style={{
         position: 'fixed', left: 20, top: '50%', transform: 'translateY(-50%)',
-        width: 140,          // ← narrower
-        maxHeight: 220,      // ← hard cap so it never overlaps chat
-        zIndex: 60,
-        background: 'rgba(15,15,20,0.75)',
+        width: 200, zIndex: 60,
+        background: 'rgba(15,15,20,0.82)',
         backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
         border: '0.5px solid rgba(255,255,255,0.09)',
-        borderRadius: 18, padding: 10,
+        borderRadius: 18, padding: 14,
         boxShadow: '0 24px 56px rgba(0,0,0,0.5)',
-        overflow: 'hidden'   // ← prevent bleed
+        overflow: 'hidden'   // prevent bleed
     }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: '0.06em' }}>HISTORY</span>
@@ -1444,7 +1444,7 @@ const LeftSidebar = React.memo(({ sessions = [], activeSession, onSelect, onNew 
                 fontSize: 11, cursor: 'pointer'
             }}>+ New</button>
         </div>
-        <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 380, overflowY: 'auto' }}>
             {(sessions || []).length === 0 && (
                 <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, textAlign: 'center', margin: '20px 0' }}>No history yet</p>
             )}
@@ -2057,20 +2057,23 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                 type: 'amazon_add_to_cart',
                                 url: product.url
                             });
-                            
                             if (result?.success || result?.addedToCart) {
                                 setMessages(prev => [...prev, {
                                     role: 'buddy',
-                                    text: '✅ Added to cart! Preparing checkout...',
+                                    text: '✅ Added to cart! Navigating to checkout...',
                                     timestamp: Date.now()
                                 }]);
-                                
                                 const checkoutResult = await window.buddyAgent?.checkoutStep?.({ type: 'amazon_goto_checkout' });
-                                
                                 if (checkoutResult?.needsLogin) {
                                     setMessages(prev => [...prev, { role: 'await-login', timestamp: Date.now() }]);
                                 } else if (checkoutResult?.success) {
-                                    setMessages(prev => [...prev, { role: 'pre-checkout', platform: 'Amazon', timestamp: Date.now() }]);
+                                    // Show pre-checkout questions before payment, carry the product for reference
+                                    setMessages(prev => [...prev, {
+                                        role: 'pre-checkout',
+                                        platform: msg.platform || 'Amazon',
+                                        selectedProduct: product,
+                                        timestamp: Date.now()
+                                    }]);
                                 } else {
                                     setMessages(prev => [...prev, {
                                         role: 'buddy',
@@ -2159,20 +2162,6 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                         </div>
                                     </div>
 
-                                    {/* Product image */}
-                                    <div style={{
-                                        width: '100%', height: 170,
-                                        background: '#fff',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        overflow: 'hidden'
-                                    }}>
-                                        {product.image
-                                            ? <img src={product.image} alt={product.title || 'Product'}
-                                                style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
-                                            : <span style={{ color: '#ccc', fontSize: 13 }}>No image available</span>
-                                        }
-                                    </div>
-
                                     {/* Product info */}
                                     <div style={{ padding: '12px 14px' }}>
 
@@ -2184,6 +2173,12 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                             {(product.title || 'Unknown product').slice(0, 100)}
                                             {(product.title || '').length > 100 ? '...' : ''}
                                         </p>
+                                        
+                                        <div style={{ padding: '8px 10px', background: 'rgba(52,211,153,0.1)', borderRadius: 8, margin: '8px 0', border: '0.5px solid rgba(52,211,153,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <p style={{ margin: 0, fontSize: 11, color: 'rgba(52,211,153,0.9)' }}>
+                                                👀 Buddy is reviewing this item on Chrome right now.
+                                            </p>
+                                        </div>
 
                                         {/* Price + Rating */}
                                         <div style={{
@@ -2281,15 +2276,26 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
 
                     if (msg.role === 'pre-checkout') {
                         return (
-                            <AgentPreCheckoutCard
+                            <PreCheckoutCard
                                 key={i}
                                 platform={msg.platform || 'Amazon'}
-                                onSubmit={async () => {
-                                    setMessages(prev => prev.map((m, idx) =>
-                                        idx === i
-                                            ? { role: 'buddy', text: '💳 Great! Choose your payment method:', timestamp: Date.now() }
-                                            : m
-                                    ));
+                                onConfirm={async ({ questions, other }) => {
+                                    const qMap = {
+                                        return: '📦 Return: Most Amazon items have 7-30 day return window.',
+                                        cancel: '❌ Cancel: You can cancel before shipment from Your Orders.',
+                                        warranty: '🛡️ Warranty: Check product description or contact seller.',
+                                        delivery: '🚚 Delivery: Usually 2-5 business days.',
+                                        genuine: '✅ Genuine: Look for "Sold by Amazon" or authorized sellers.',
+                                        cod: '💵 COD: Available for most items — shown at checkout.'
+                                    };
+                                    const answers = (questions || []).map(q => qMap[q]).filter(Boolean);
+                                    if (other) answers.push(`💬 "${other}" — verify on Amazon directly.`);
+                                    setMessages(prev => prev.map((m, idx) => idx === i ? {
+                                        role: 'buddy',
+                                        text: (answers.length ? answers.join('\n\n') + '\n\n' : '') + '💳 Choose your payment method:',
+                                        timestamp: m.timestamp || Date.now()
+                                    } : m));
+                                    // Cart is already done — just proceed to payment selection
                                     setMessages(prev => [...prev, {
                                         role: 'payment-select',
                                         platform: msg.platform || 'Amazon',

@@ -11,6 +11,34 @@ const { exec } = require("child_process")
 const { spawn } = require("child_process")
 const puppeteer = require('puppeteer-core')
 
+const HISTORY_PATH = path.join(app.getPath('userData'), 'history.json');
+
+function readHistory() {
+    try {
+        if (fs.existsSync(HISTORY_PATH)) {
+            return JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
+        }
+    } catch {}
+    return [];
+}
+
+function writeHistory(data) {
+    try {
+        fs.writeFileSync(HISTORY_PATH, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('[History] Write failed:', e.message);
+    }
+}
+
+ipcMain.handle('save-history', (event, sessions) => {
+    writeHistory(sessions);
+    return { success: true };
+});
+
+ipcMain.handle('get-history', () => {
+    return readHistory();
+});
+
 let browser = null;
 let page = null;
 let isLoggedIn = false;
@@ -891,12 +919,19 @@ async function executeAgentAction(action) {
                         const parsed = parseFloat(cleaned);
                         if (!isNaN(parsed)) price = parsed;
                     }
+                    // Parse first number from rating string e.g. "4.2 out of 5 stars"
+                    let rating = 0;
+                    if (ratingEl) {
+                        const ratingText = ratingEl.textContent.trim();
+                        const ratingMatch = ratingText.match(/^(\d+\.?\d*)/);
+                        if (ratingMatch) rating = parseFloat(ratingMatch[1]);
+                    }
                     return {
                         url: linkEl.href,
                         price,
                         title: titleEl?.textContent?.trim() || '',
                         image: imgEl?.src || '',
-                        rating: ratingEl?.textContent?.trim() || 'N/A',
+                        rating,
                         reviews: reviewEl?.textContent?.trim() || ''
                     };
                 }).filter(Boolean);
@@ -905,14 +940,12 @@ async function executeAgentAction(action) {
             console.log('[Agent] Total products found:', products.length);
             products.forEach(prod => console.log(`  ₹${prod.price} - ${prod.title?.slice(0,40)}`));
             
-            // STRICT budget filter
-            const withinBudget = products
-                .filter(prod => prod.price !== null && prod.price <= budget)
-                .sort((a, b) => b.price - a.price); // closest to budget first
+            // Strict budget filter — budget already declared above
+            let candidates = products.filter(p => p.price !== null && (!budget || p.price <= budget));
             
-            console.log('[Agent] Products within budget ₹', budget, ':', withinBudget.length);
+            console.log('[Agent] Products within budget ₹', budget, ':', candidates.length);
             
-            if (withinBudget.length === 0) {
+            if (budget && candidates.length === 0) {
                 const cheapest = products.filter(prod => prod.price !== null).sort((a,b) => a.price - b.price)[0];
                 agentState = 'idle';
                 return {
@@ -925,14 +958,22 @@ async function executeAgentAction(action) {
                 };
             }
             
+            candidates = candidates
+                .sort((a, b) => {
+                    const rA = parseFloat(a.rating) || 0;
+                    const rB = parseFloat(b.rating) || 0;
+                    return rB - rA;
+                })
+                .slice(0, 5);
+            
             agentState = 'selecting_product';
-            agentProducts = withinBudget.slice(0, 5);
+            agentProducts = candidates;
             agentCurrentProductIndex = 0;
             
             return {
                 success: true,
-                products: agentProducts,
-                totalFound: withinBudget.length
+                products: candidates,
+                totalFound: candidates.length
             };
         }
 
@@ -997,23 +1038,29 @@ async function executeAgentAction(action) {
             
             // Smooth scroll entire product page so user can see all details
             console.log('[Agent] Scrolling product page for user review...');
+            positionWindowSide();
             await p.evaluate(async () => {
-                await new Promise((resolve) => {
-                    let totalHeight = 0;
-                    const distance = 400;
-                    const delay = 120;
+                await new Promise(resolve => {
+                    let total = 0;
                     const timer = setInterval(() => {
-                        window.scrollBy(0, distance);
-                        totalHeight += distance;
-                        if (totalHeight >= document.body.scrollHeight - window.innerHeight) {
+                        window.scrollBy(0, 300);
+                        total += 300;
+                        if (total >= document.body.scrollHeight - window.innerHeight) {
                             clearInterval(timer);
-                            // Scroll back to top
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                             setTimeout(resolve, 600);
                         }
-                    }, delay);
+                    }, 100);
                 });
             });
+            await new Promise(res => setTimeout(res, 600));
+            positionWindowCenter();
+            if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
+                global.mainWindowRef.show();
+                global.mainWindowRef.focus();
+                global.mainWindowRef.setAlwaysOnTop(true);
+                setTimeout(() => { global.mainWindowRef?.setAlwaysOnTop(false); }, 1500);
+            }
             await new Promise(res => setTimeout(res, 800));
             console.log('[Agent] Page scroll complete — proceeding to Add to Cart');
 
@@ -1502,6 +1549,10 @@ async function executeAgentAction(action) {
             
             agentState = 'idle';
             console.log('[Agent] Order placed:', orderPlaced, '| URL:', finalUrl);
+            await new Promise(res => setTimeout(res, 3000));
+            if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
+                positionWindowCenter();
+            }
             return { 
                 success: true, 
                 orderPlaced,
@@ -1567,30 +1618,17 @@ async function executeAgentAction(action) {
                 console.log('[Agent] Flipkart products extracted:', products.length);
 
                 const budget = action.budget ? parseFloat(action.budget) : null;
-                if (budget && !isNaN(budget)) {
-                    const validProducts = products.filter(p => p.price !== null && p.price <= budget);
-                    if (validProducts.length === 0) {
-                        const priced = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price);
-                        return {
-                            success: false,
-                            budgetExceeded: true,
-                            cheapestAvailable: priced[0]?.price ?? null,
-                            cheapestTitle: priced[0]?.title?.slice(0, 50) ?? null,
-                            originalBudget: budget,
-                            error: 'No products found within ₹' + budget
-                        };
-                    }
-                    validProducts.sort((a, b) => b.price !== a.price ? b.price - a.price : b.rating - a.rating);
-                    if (!validProducts.length) {
-                        return {
-                            success: false,
-                            error: 'No valid products found within budget'
-                        };
-                    }
-                    return {
-                        success: true,
-                        options: validProducts.slice(0, 5)
-                    };
+                let candidates = products.filter(p => p.price !== null && (!budget || p.price <= budget));
+
+                if (budget && candidates.length === 0) {
+                    const cheapest = products.filter(p => p.price !== null).sort((a, b) => a.price - b.price)[0];
+                    return { success: false, budgetExceeded: true, cheapestAvailable: cheapest?.price, cheapestTitle: cheapest?.title?.slice(0, 50), originalBudget: budget, error: `No Flipkart products within ₹${budget}` };
+                }
+
+                candidates = candidates.sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0)).slice(0, 5);
+                
+                if (candidates.length > 0) {
+                    return { success: true, options: candidates };
                 } else {
                     const pick = products.find(p => p.url);
                     if (!pick) return { success: false, error: 'No products found on this page.' };
@@ -2055,8 +2093,9 @@ function positionWindowSide() {
     const { screen } = require('electron');
     const display = screen.getPrimaryDisplay();
     const { width, height } = display.workAreaSize;
+    // Move fully off the right edge — true pop-out
     mainWindow.setBounds({
-        x: width - 420,
+        x: width,
         y: Math.floor(height / 2) - 300,
         width: 400,
         height: 600
