@@ -919,19 +919,12 @@ async function executeAgentAction(action) {
                         const parsed = parseFloat(cleaned);
                         if (!isNaN(parsed)) price = parsed;
                     }
-                    // Parse first number from rating string e.g. "4.2 out of 5 stars"
-                    let rating = 0;
-                    if (ratingEl) {
-                        const ratingText = ratingEl.textContent.trim();
-                        const ratingMatch = ratingText.match(/^(\d+\.?\d*)/);
-                        if (ratingMatch) rating = parseFloat(ratingMatch[1]);
-                    }
                     return {
                         url: linkEl.href,
                         price,
                         title: titleEl?.textContent?.trim() || '',
                         image: imgEl?.src || '',
-                        rating,
+                        rating: ratingEl?.textContent?.trim() || 'N/A',
                         reviews: reviewEl?.textContent?.trim() || ''
                     };
                 }).filter(Boolean);
@@ -939,42 +932,49 @@ async function executeAgentAction(action) {
             
             console.log('[Agent] Total products found:', products.length);
             products.forEach(prod => console.log(`  ₹${prod.price} - ${prod.title?.slice(0,40)}`));
-            
-            // Strict budget filter — budget already declared above
-            let candidates = products.filter(p => p.price !== null && (!budget || p.price <= budget));
-            
-            console.log('[Agent] Products within budget ₹', budget, ':', candidates.length);
-            
+
+            // Parse rating as float for proper sorting
+            const rated = products.map(p => ({
+                ...p,
+                ratingNum: parseFloat((p.rating || '0').toString().replace(/[^\d.]/g, '')) || 0
+            }));
+
+            // Strict budget filter — uses budget already declared above
+            let candidates = rated.filter(p => p.price !== null && p.price > 0 && (!budget || p.price <= budget));
+
             if (budget && candidates.length === 0) {
-                const cheapest = products.filter(prod => prod.price !== null).sort((a,b) => a.price - b.price)[0];
+                const cheapest = rated.filter(p => p.price !== null).sort((a, b) => a.price - b.price)[0];
                 agentState = 'idle';
                 return {
-                    success: false,
-                    budgetExceeded: true,
-                    cheapestAvailable: cheapest?.price || null,
-                    cheapestTitle: cheapest?.title?.slice(0, 50) || null,
+                    success: false, budgetExceeded: true,
+                    cheapestAvailable: cheapest?.price,
+                    cheapestTitle: cheapest?.title?.slice(0, 50),
                     originalBudget: budget,
-                    error: `No products found within ₹${budget}`
+                    error: `No products within ₹${budget}`
                 };
             }
-            
-            candidates = candidates
-                .sort((a, b) => {
-                    const rA = parseFloat(a.rating) || 0;
-                    const rB = parseFloat(b.rating) || 0;
-                    return rB - rA;
-                })
-                .slice(0, 5);
-            
+
+            // Sort by rating DESCENDING — highest rated first
+            candidates.sort((a, b) => b.ratingNum - a.ratingNum);
+
+            // Take top 5
+            const top5 = candidates.slice(0, 5).map(p => ({
+                url: p.url,
+                price: p.price,
+                title: p.title,
+                image: p.image || '',
+                rating: p.rating || 'N/A',
+                reviews: p.reviews || '',
+                ratingNum: p.ratingNum
+            }));
+
+            console.log('[Agent] Top 5 by rating:', top5.map(p => `${p.ratingNum}★ ₹${p.price} ${p.title?.slice(0,30)}`));
+
             agentState = 'selecting_product';
-            agentProducts = candidates;
+            agentProducts = top5;
             agentCurrentProductIndex = 0;
-            
-            return {
-                success: true,
-                products: candidates,
-                totalFound: candidates.length
-            };
+
+            return { success: true, products: top5 };
         }
 
         if (action.type === 'amazon_preview_product') {
@@ -984,6 +984,34 @@ async function executeAgentAction(action) {
             } catch (err) {
                 return { success: false, error: 'Preview failed: ' + err.message };
             }
+        }
+
+        if (action.type === 'amazon_highlight_product') {
+            const p = global.activePage;
+            if (!p || p.isClosed()) return { success: false, error: 'No active page' };
+            if (!action.url) return { success: false, error: 'No URL provided' };
+
+            console.log('[Agent] Highlighting product:', action.url);
+
+            await p.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await new Promise(res => setTimeout(res, 1500));
+
+            await p.evaluate(async () => {
+                await new Promise(resolve => {
+                    let total = 0;
+                    const timer = setInterval(() => {
+                        window.scrollBy(0, 250);
+                        total += 250;
+                        if (total >= Math.min(document.body.scrollHeight - window.innerHeight, 2500)) {
+                            clearInterval(timer);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            setTimeout(resolve, 500);
+                        }
+                    }, 80);
+                });
+            });
+
+            return { success: true };
         }
 
         if (action.type === 'amazon_scroll_to_product') {
@@ -1295,197 +1323,146 @@ async function executeAgentAction(action) {
         }
 
         if (action.type === 'amazon_select_payment') {
-            console.log('[Agent] STEP 5: Selecting payment:', action.method);
+            console.log('[Agent] Selecting payment:', action.method);
             const p = global.activePage;
             if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
 
             const url = p.url();
-            if (url.includes('signin') || url.includes('ap/')) {
-                return { success: false, error: 'Still on login page. Complete login first.' };
+            if (url.includes('/ap/signin') || url.includes('/ap/')) {
+                return { success: false, error: 'Still on login page. Please complete login first.' };
             }
 
-            console.log('[Agent] Current URL before payment:', url);
             await new Promise(res => setTimeout(res, 3000));
+            console.log('[Agent] Payment page URL:', url);
 
-            // Step A: Select the payment radio button
+            // STEP A: Click the correct payment radio button
             const termMap = {
-                cod: ['Cash on Delivery', 'Pay on Delivery', 'POD', 'cash'],
-                upi: ['UPI', 'BHIM UPI', 'Net Banking/UPI'],
-                card: ['Credit or debit card', 'Credit/Debit', 'Debit card', 'Credit card'],
+                cod: ['Cash on Delivery', 'Pay on Delivery', 'Cash/Card on delivery'],
+                upi: ['UPI', 'BHIM UPI'],
+                card: ['Credit or debit card', 'Debit card', 'Credit card', 'Credit/Debit'],
                 netbanking: ['Net Banking', 'NetBanking'],
-                amazonpay: ['Amazon Pay', 'Amazon pay balance']
+                amazonpay: ['Amazon Pay']
             };
-
             const terms = termMap[action.method] || [];
-            
-            const selectionResult = await p.evaluate((terms) => {
-                // Try to find and click radio input first
-                const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
-                for (const input of inputs) {
-                    const label = input.closest('label') ||
-                                  document.querySelector(`label[for="${input.id}"]`) ||
-                                  input.parentElement;
-                    const labelText = label?.textContent || '';
+
+            const radioClicked = await p.evaluate((terms) => {
+                const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                for (const radio of radios) {
+                    const container = radio.closest('label') ||
+                                      document.querySelector(`label[for="${radio.id}"]`) ||
+                                      radio.parentElement?.parentElement;
+                    const text = (container?.textContent || '').trim();
                     for (const term of terms) {
-                        if (labelText.toLowerCase().includes(term.toLowerCase())) {
-                            input.scrollIntoView({ block: 'center' });
-                            input.click();
-                            return { clicked: true, method: 'radio', text: labelText.trim().slice(0, 40) };
+                        if (text.toLowerCase().includes(term.toLowerCase())) {
+                            radio.scrollIntoView({ block: 'center' });
+                            radio.click();
+                            return `radio: ${text.slice(0, 40)}`;
                         }
                     }
                 }
-
-                // Fallback: find by label/div text
-                const allEls = Array.from(document.querySelectorAll('label, div[class*="payment"], span[class*="payment"], div[class*="pmts"]'));
-                for (const el of allEls) {
-                    const text = el.textContent || '';
+                const all = Array.from(document.querySelectorAll('div, span, label, p'));
+                for (const el of all) {
+                    if (el.children.length > 3) continue;
+                    const text = (el.textContent || '').trim();
                     for (const term of terms) {
-                        if (text.toLowerCase().includes(term.toLowerCase()) && el.offsetWidth > 0) {
+                        if (text.toLowerCase().includes(term.toLowerCase()) && el.offsetWidth > 0 && text.length < 80) {
                             el.scrollIntoView({ block: 'center' });
                             el.click();
-                            return { clicked: true, method: 'label', text: text.trim().slice(0, 40) };
+                            return `fallback: ${text.slice(0, 40)}`;
                         }
                     }
                 }
-                return { clicked: false };
+                return null;
             }, terms);
 
-            console.log('[Agent] Payment radio selection:', selectionResult);
-            await new Promise(res => setTimeout(res, 1500));
+            console.log('[Agent] Radio click result:', radioClicked);
+            await new Promise(res => setTimeout(res, 2000));
 
-            // Step B: Handle UPI ID input if needed
+            // Handle UPI ID
             if (action.method === 'upi' && action.upiId) {
                 try {
-                    await p.waitForSelector('input[placeholder*="UPI"], input[name*="upi"], input[placeholder*="VPA"]', { timeout: 5000 });
-                    const upiInputs = await p.$$('input[placeholder*="UPI"], input[name*="upi"], input[placeholder*="VPA"]');
-                    if (upiInputs.length > 0) {
-                        await upiInputs[0].click({ clickCount: 3 });
-                        await upiInputs[0].type(action.upiId, { delay: 50 });
-                        console.log('[Agent] UPI ID entered');
-                        await new Promise(res => setTimeout(res, 500));
-                    }
+                    await p.waitForSelector('input[placeholder*="UPI"], input[placeholder*="VPA"], input[name*="upi"]', { timeout: 4000 });
+                    const inp = await p.$('input[placeholder*="UPI"], input[placeholder*="VPA"], input[name*="upi"]');
+                    if (inp) { await inp.click({ clickCount: 3 }); await inp.type(action.upiId, { delay: 40 }); }
                 } catch { console.log('[Agent] No UPI input found'); }
+                await new Promise(res => setTimeout(res, 500));
             }
 
-            // Step C: CRITICAL — Click "Use this payment method" or "Continue" button
-            console.log('[Agent] Looking for "Use this payment method" button...');
-            
-            const continueButtonTexts = [
-                'Use this payment method',
-                'Use this payment',
-                'Continue',
-                'use this payment method',
-                'Proceed',
-                'Next',
-            ];
-
+            // STEP B: Click "Use this payment method" / "Continue"
+            console.log('[Agent] Clicking Use this payment method...');
             let continueClicked = false;
-            
-            // Try multiple times with scroll — button may be below fold
-            for (let attempt = 0; attempt < 3 && !continueClicked; attempt++) {
-                continueClicked = await p.evaluate((buttonTexts) => {
-                    // Search all clickable elements
-                    const candidates = Array.from(document.querySelectorAll(
-                        'input[type="submit"], button, a, span.a-button-inner, div.a-button-inner'
-                    ));
-                    
-                    for (const el of candidates) {
-                        const text = (el.value || el.textContent || el.getAttribute('aria-label') || '').trim();
-                        for (const btnText of buttonTexts) {
-                            if (text.toLowerCase().includes(btnText.toLowerCase()) && el.offsetWidth > 0) {
-                                el.scrollIntoView({ block: 'center' });
-                                el.click();
-                                return text.slice(0, 50);
-                            }
+
+            for (let attempt = 0; attempt < 5 && !continueClicked; attempt++) {
+                continueClicked = await p.evaluate(() => {
+                    const targets = [
+                        '#pp-oyyD-25',
+                        '#submitOrderButtonId',
+                        'input[name="ppw-widgetEvent:SetPaymentPlanSelectAction"]',
+                        '.pmts-submit-btn',
+                        'input[data-testid*="payment"][type="submit"]',
+                    ];
+                    for (const sel of targets) {
+                        const el = document.querySelector(sel);
+                        if (el && el.offsetWidth > 0) {
+                            el.scrollIntoView({ block: 'center' });
+                            el.click();
+                            return `selector: ${sel}`;
                         }
                     }
-                    
-                    // Also try Amazon-specific button classes
-                    const amazonBtns = Array.from(document.querySelectorAll(
-                        'input[name*="ppw-widgetEvent:SetPaymentPlanSelectContinueEvent"], span[id*="orderSummaryPrimaryActionBtn"] input, [data-testid="payment-continue-button"], .a-button-primary input, .pmts-submit-btn'
+                    const clickableTexts = ['use this payment method', 'use this payment', 'continue', 'proceed'];
+                    const all = Array.from(document.querySelectorAll(
+                        'input[type="submit"], button, .a-button-primary input, .a-button-primary button'
                     ));
-                    for (const btn of amazonBtns) {
-                        if (btn.offsetWidth > 0) {
-                            btn.scrollIntoView({ block: 'center' });
-                            btn.click();
-                            return 'amazon-primary-btn';
+                    for (const el of all) {
+                        const text = (el.value || el.textContent || '').toLowerCase().trim();
+                        if (clickableTexts.some(t => text.includes(t)) && el.offsetWidth > 0) {
+                            el.scrollIntoView({ block: 'center' });
+                            el.click();
+                            return `text: ${text.slice(0, 40)}`;
                         }
                     }
-                    
                     return null;
-                }, continueButtonTexts);
+                });
 
                 if (!continueClicked) {
-                    console.log(`[Agent] Continue button not found on attempt ${attempt + 1}, scrolling...`);
-                    await p.evaluate(() => {
-                        window.scrollBy(0, 400);
-                        // Extreme fallback: forcefully click ANY primary button on the right side
-                        const checkoutBtn = document.querySelector('input[name="ppw-widgetEvent:SetPaymentPlanSelectContinueEvent"]');
-                        if (checkoutBtn) checkoutBtn.click();
-                    });
-                    await new Promise(res => setTimeout(res, 1000));
+                    console.log(`[Agent] Continue not found on attempt ${attempt + 1} — scrolling`);
+                    await p.evaluate(() => window.scrollBy(0, 400));
+                    await new Promise(res => setTimeout(res, 1200));
                 }
             }
 
-            console.log('[Agent] Continue button clicked:', continueClicked);
+            console.log('[Agent] Continue click result:', continueClicked);
 
-            // Step D: Wait for navigation to final review page
-            try {
-                await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 });
-                console.log('[Agent] Navigation after payment:', p.url());
-            } catch {
-                console.log('[Agent] No navigation detected — may already be on review page');
+            if (!continueClicked) {
+                return { success: false, error: 'Could not find "Use this payment method" button. Please click it manually in Chrome.' };
             }
 
+            // STEP C: Wait for navigation to order review page
+            await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {
+                console.log('[Agent] No navigation after payment — may already be on review page');
+            });
             await new Promise(res => setTimeout(res, 2000));
 
             const finalUrl = p.url();
-            console.log('[Agent] Final URL after payment selection:', finalUrl);
-
-            // Verify we're on a checkout/review page (not still on payment page)
-            const isOnReviewPage = await p.evaluate(() => {
+            const onReviewPage = await p.evaluate(() => {
                 const body = document.body.innerText.toLowerCase();
-                const hasPlaceOrder = body.includes('place your order') || body.includes('place order');
-                const hasOrderTotal = body.includes('order total');
-                const hasPlaceOrderBtn = document.querySelector('#submitOrderButtonId') !== null || document.querySelector('input[name="placeYourOrder1"]') !== null;
-                
-                // If payment section is still clearly visible, we haven't navigated
-                const hasPaymentOptions = document.querySelector('input[name="ppw-instrumentRowSelection"]') !== null;
-                
-                return (hasPlaceOrder || hasOrderTotal || hasPlaceOrderBtn) && !hasPaymentOptions;
-            });
+                return body.includes('place your order') ||
+                       body.includes('order total') ||
+                       !!document.querySelector('#submitOrderButtonId') ||
+                       !!document.querySelector('input[name="placeYourOrder1"]');
+            }).catch(() => false);
 
-            console.log('[Agent] On order review page:', isOnReviewPage);
+            console.log('[Agent] Review page:', onReviewPage, '| URL:', finalUrl);
 
-            // Bring Buddy window to front for final approval
+            positionWindowCenter();
             if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
-                positionWindowCenter();
                 global.mainWindowRef.show();
                 global.mainWindowRef.focus();
                 global.mainWindowRef.setAlwaysOnTop(true);
                 setTimeout(() => { global.mainWindowRef?.setAlwaysOnTop(false); }, 2000);
             }
 
-            if (!continueClicked) {
-                return {
-                    success: false,
-                    error: 'Could not find "Use this payment method" button. Please click it manually in the browser.'
-                };
-            }
-
-            if (!isOnReviewPage) {
-                return {
-                    success: false,
-                    error: 'Clicked the button, but page did not advance. Please click "Use this payment method" manually.'
-                };
-            }
-
-            return {
-                success: true,
-                paymentSelected: action.method,
-                onReviewPage: isOnReviewPage,
-                currentUrl: finalUrl
-            };
+            return { success: true, paymentSelected: action.method, onReviewPage, currentUrl: finalUrl };
         }
 
         if (action.type === 'amazon_place_order') {
@@ -2091,15 +2068,14 @@ async function createWindow() {
 function positionWindowSide() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const { screen } = require('electron');
-    const display = screen.getPrimaryDisplay();
-    const { width, height } = display.workAreaSize;
-    // Move fully off the right edge — true pop-out
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    // Slide to right side — still on screen but out of Chrome's way
     mainWindow.setBounds({
-        x: width,
-        y: Math.floor(height / 2) - 300,
+        x: width - 420,
+        y: Math.floor(height / 2) - 290,
         width: 400,
-        height: 600
-    }, true); // true = animate
+        height: 580
+    }, true);
 }
 
 function positionWindowCenter() {

@@ -2049,45 +2049,17 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                             setMessages(prev => prev.map((m, mIdx) =>
                                 mIdx === i ? {
                                     role: 'buddy',
-                                    text: `🛒 Adding "${(product.title || 'item').slice(0, 40)}..." to cart`,
-                                    timestamp: Date.now()
+                                    text: `👀 "${(product.title || 'item').slice(0, 55)}" — ₹${product.price?.toLocaleString()}\n\nLet me check a few things before adding to cart...`,
+                                    timestamp: m.timestamp || Date.now()
                                 } : m
                             ));
-                            const result = await window.buddyAgent?.checkoutStep?.({
-                                type: 'amazon_add_to_cart',
-                                url: product.url
-                            });
-                            if (result?.success || result?.addedToCart) {
-                                setMessages(prev => [...prev, {
-                                    role: 'buddy',
-                                    text: '✅ Added to cart! Navigating to checkout...',
-                                    timestamp: Date.now()
-                                }]);
-                                const checkoutResult = await window.buddyAgent?.checkoutStep?.({ type: 'amazon_goto_checkout' });
-                                if (checkoutResult?.needsLogin) {
-                                    setMessages(prev => [...prev, { role: 'await-login', timestamp: Date.now() }]);
-                                } else if (checkoutResult?.success) {
-                                    // Show pre-checkout questions before payment, carry the product for reference
-                                    setMessages(prev => [...prev, {
-                                        role: 'pre-checkout',
-                                        platform: msg.platform || 'Amazon',
-                                        selectedProduct: product,
-                                        timestamp: Date.now()
-                                    }]);
-                                } else {
-                                    setMessages(prev => [...prev, {
-                                        role: 'buddy',
-                                        text: '⚠️ ' + (checkoutResult?.error || 'Failed to proceed to checkout'),
-                                        timestamp: Date.now()
-                                    }]);
-                                }
-                            } else {
-                                setMessages(prev => [...prev, {
-                                    role: 'buddy',
-                                    text: '❌ ' + (result?.error || 'Failed to add to cart'),
-                                    timestamp: Date.now()
-                                }]);
-                            }
+                            await new Promise(res => setTimeout(res, 600));
+                            setMessages(prev => [...prev, {
+                                role: 'pre-checkout',
+                                platform: msg.platform || 'Amazon',
+                                selectedProduct: product,
+                                timestamp: Date.now()
+                            }]);
                         };
 
                         const handleCancel = () => {
@@ -2100,16 +2072,27 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                             ));
                         };
 
-                        // Scroll browser to current product (first render only)
-                        if (!msg._browserScrolled) {
-                            setMessages(prev => prev.map((m, mIdx) =>
-                                mIdx === i ? { ...m, _browserScrolled: true } : m
-                            ));
-                            window.buddyAgent?.checkoutStep?.({
-                                type: 'amazon_scroll_to_product',
-                                index: currentIdx
-                            }).catch(() => {});
-                        }
+                        // Highlight current product in browser whenever currentIdx changes.
+                        // NOTE: hooks (useEffect) cannot be called inside .map() — using safe IIFE guard instead.
+                        (() => {
+                            const product = items?.[currentIdx];
+                            if (product?.url && !msg._highlightTriggered) {
+                                setTimeout(() => {
+                                    window.electronAPI?.positionSide?.();
+                                    window.buddyAgent?.checkoutStep?.({
+                                        type: 'amazon_highlight_product',
+                                        url: product.url
+                                    }).then(() => {
+                                        window.electronAPI?.positionCenter?.();
+                                    }).catch(() => {
+                                        window.electronAPI?.positionCenter?.();
+                                    });
+                                }, 0);
+                                setMessages(prev => prev.map((m, mIdx) =>
+                                    mIdx === i ? { ...m, _highlightTriggered: true } : m
+                                ));
+                            }
+                        })();
 
                         return (
                             <div key={i} style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, alignItems: 'flex-start' }}>
@@ -2224,7 +2207,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                                 animation: 'pulse 1.5s ease-in-out infinite'
                                             }} />
                                             <span style={{ color: 'rgba(52,211,153,0.65)', fontSize: 10 }}>
-                                                Highlighted in Amazon browser window
+                                                🟢 Highlighted in Amazon browser window
                                             </span>
                                         </div>
 
@@ -2290,12 +2273,28 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                     };
                                     const answers = (questions || []).map(q => qMap[q]).filter(Boolean);
                                     if (other) answers.push(`💬 "${other}" — verify on Amazon directly.`);
+                                    
                                     setMessages(prev => prev.map((m, idx) => idx === i ? {
                                         role: 'buddy',
-                                        text: (answers.length ? answers.join('\n\n') + '\n\n' : '') + '💳 Choose your payment method:',
+                                        text: (answers.length ? answers.join('\n\n') + '\n\n' : '') + '✅ Adding to cart now...',
                                         timestamp: m.timestamp || Date.now()
                                     } : m));
-                                    // Cart is already done — just proceed to payment selection
+                                    
+                                    await new Promise(res => setTimeout(res, 500));
+                                    const product = msg.selectedProduct;
+                                    if (!product?.url) {
+                                        setMessages(prev => [...prev, { role: 'buddy', text: '⚠️ Product URL missing. Please try again.', timestamp: Date.now() }]);
+                                        return;
+                                    }
+                                    const platform = (msg.platform || 'amazon').toLowerCase();
+                                    const cartResult = await window.buddyAgent.checkoutStep({
+                                        type: platform === 'flipkart' ? 'flipkart_add_to_cart' : 'amazon_add_to_cart',
+                                        url: product.url
+                                    });
+                                    if (!cartResult?.success && !cartResult?.addedToCart) {
+                                        setMessages(prev => [...prev, { role: 'buddy', text: `⚠️ ${cartResult?.error || 'Failed to add to cart'}`, timestamp: Date.now() }]);
+                                        return;
+                                    }
                                     setMessages(prev => [...prev, {
                                         role: 'payment-select',
                                         platform: msg.platform || 'Amazon',
