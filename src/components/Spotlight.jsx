@@ -2741,6 +2741,7 @@ const Spotlight = React.memo(() => {
     const [isWaitingForInput, setIsWaitingForInput] = useState(false);
     // tracks the action currently being executed (shared with login/search handlers)
     const [currentAction, setCurrentAction] = useState(null);
+    const [selectedProduct, setSelectedProduct] = useState(null);
     // state-machine step: idle → approved → login → search → done
     const [agentStep, setAgentStep] = useState('idle');
     const inputRef = useRef(null);
@@ -2789,10 +2790,12 @@ const Spotlight = React.memo(() => {
                     timestamp: Date.now()
                 }]);
                 
-                const result = await window.buddyAgent.checkoutStep({
+                const result = await window.buddyAgent.execute({
                     type: "amazon_search",
                     query: action.query,
-                    budget: action.budget || null
+                    budget: action.budget || null,
+                    preferences: action.preferences || null,
+                    brand: action.brand || null
                 });
                 
                 if (result?.budgetExceeded) {
@@ -2949,14 +2952,29 @@ const Spotlight = React.memo(() => {
 
     const handleProductSelect = async (item) => {
         try {
+            setSelectedProduct({
+              title: item.title,
+              price: item.price,
+              link: item.url || item.link,
+              image: item.image,
+              rating: item.rating
+            });
+
             setMessages(prev => [...prev, {
                 role: 'buddy',
                 text: `🛒 Selecting: ${item.title || 'product'}...`,
                 timestamp: Date.now()
             }]);
+            
             await window.buddyAgent.execute({
-                type: 'select_product',
-                url: item.url || item.link
+              type: "amazon_select_product",
+              product: {
+                title: item.title,
+                price: item.price,
+                link: item.url || item.link,
+                image: item.image,
+                rating: item.rating
+              }
             });
         } catch (err) {
             console.error('Product select failed:', err);

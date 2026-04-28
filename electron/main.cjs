@@ -273,44 +273,32 @@ async function waitForLoginComplete(page) {
 async function resumeAgentAction(page, action, checkLoginBreak) {
     try {
         switch (action.type) {
+            case 'amazon_select_product': {
+                console.log('[Agent] Opening CONFIRMED product:', action.product.title);
+                const p = global.activePage;
+                await p.goto(action.product.link, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+                await new Promise(r => setTimeout(r, 2000));
+                
+                // FIX 3: ADD SCROLLING HERE
+                await autoScroll(p);
+                await p.waitForTimeout(2000);
+
+                // FIX 4: RESTORE WINDOW AFTER PRODUCT LOAD
+                if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
+                    global.mainWindowRef.show();
+                    global.mainWindowRef.focus();
+                    global.mainWindowRef.restore();
+                }
+                
+                return { success: true };
+            }
+
             case 'zomato_search':
             case 'swiggy_search':
                 await automateFoodOrder(page, checkLoginBreak);
                 break;
 
             case 'amazon_search': {
-                if (action.selectedProduct) {
-                    console.log('[Agent] Navigating to selected product:', action.selectedProduct);
-                    await page.goto(action.selectedProduct, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-                    await new Promise(r => setTimeout(r, 2500));
-                    await checkLoginBreak();
-                    console.log('[Agent] On product page:', page.url());
-
-                    const cartClicked = await page.evaluate(() => {
-                        const addToCartInput = document.querySelector('#add-to-cart-button');
-                        if (addToCartInput && addToCartInput.offsetWidth > 0) {
-                            addToCartInput.scrollIntoView({ block: 'center' });
-                            addToCartInput.click();
-                            return 'input#add-to-cart-button';
-                        }
-                        const els = Array.from(document.querySelectorAll('input[type="submit"], button'));
-                        for (const el of els) {
-                            const text = (el.value || el.innerText || '').toLowerCase();
-                            if ((text.includes('add to cart') || text.includes('add to basket')) && el.offsetWidth > 0) {
-                                el.scrollIntoView({ block: 'center' });
-                                el.click();
-                                return 'fallback: ' + text.substring(0, 30);
-                            }
-                        }
-                        return null;
-                    });
-
-                    console.log('[Agent] Add to Cart clicked via:', cartClicked);
-                    await new Promise(r => setTimeout(r, 2500));
-                    await checkLoginBreak();
-                    break;
-                }
-
                 if (action.loadMoreOptions) {
                     console.log('[Agent] Loading more options (scrolling down)...');
                     await page.evaluate(() => window.scrollBy(0, 1500));
@@ -896,7 +884,8 @@ async function executeAgentAction(action) {
             const p = global.activePage;
             if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
             
-            const budget = action.budget ? parseFloat(action.budget) : null;
+            const budget = action.budget ? Number(action.budget) : null;
+            console.log('[Agent] Strict Budget applied:', budget);
             
             const searchUrl = `https://www.amazon.in/s?k=${encodeURIComponent(action.query)}`;
             console.log('[Agent] Navigating to search:', searchUrl);
@@ -939,8 +928,11 @@ async function executeAgentAction(action) {
                 ratingNum: parseFloat((p.rating || '0').toString().replace(/[^\d.]/g, '')) || 0
             }));
 
-            // Strict budget filter — uses budget already declared above
-            let candidates = rated.filter(p => p.price !== null && p.price > 0 && (!budget || p.price <= budget));
+            let candidates = rated.filter(p => {
+                if (!p.price || p.price <= 0) return false;
+                if (budget && p.price > budget) return false;
+                return true;
+            });
 
             if (budget && candidates.length === 0) {
                 const cheapest = rated.filter(p => p.price !== null).sort((a, b) => a.price - b.price)[0];

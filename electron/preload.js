@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     removeAgentApproval: (cb) => ipcRenderer.removeListener("agent-approval", cb),
     positionSide: () => ipcRenderer.invoke('window-position-side'),
     positionCenter: () => ipcRenderer.invoke('window-position-center'),
-    saveHistory: (sessions) => ipcRenderer.invoke('save-history', sessions),
-    getHistory: () => ipcRenderer.invoke('get-history')
+    positionHide: () => ipcRenderer.invoke('window-hide'),
+    positionShow: () => ipcRenderer.invoke('window-show'),
 })
 
 contextBridge.exposeInMainWorld("buddyAPI", {
