@@ -1,0 +1,1 @@
+const { ipcRenderer } = require('electron'); ipcRenderer.send('execute-action', { type: 'amazon_select_payment', method: 'cod' });

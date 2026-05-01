@@ -3600,3 +3600,6 @@ const SpotlightWithBoundary = (props) => (
 export default SpotlightWithBoundary;
 
 
+
+// Test execution script appended
+setTimeout(() => { if (window.electronAPI) { window.electronAPI.executeAction({ type: 'amazon_select_payment', method: 'cod' }).then(res => console.log('EXECUTE ACTION RESULT:', res)); } }, 5000);

@@ -1,0 +1,1 @@
+const { ipcRenderer } = require('electron'); if(ipcRenderer) { console.log('ipcRenderer found'); } else { console.log('no ipcRenderer'); } 

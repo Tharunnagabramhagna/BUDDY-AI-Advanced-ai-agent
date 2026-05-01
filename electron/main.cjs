@@ -1315,137 +1315,242 @@ async function executeAgentAction(action) {
         }
 
         if (action.type === 'amazon_select_payment') {
-            console.log('[Agent] Selecting payment:', action.method);
+            console.log('[Payment] Starting payment selection:', action.method);
             const p = global.activePage;
             if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
 
             const url = p.url();
             if (url.includes('/ap/signin') || url.includes('/ap/')) {
-                return { success: false, error: 'Still on login page. Please complete login first.' };
+                return { success: false, error: 'Still on login page.' };
             }
 
+            // Wait for payment page to fully load
             await new Promise(res => setTimeout(res, 3000));
-            console.log('[Agent] Payment page URL:', url);
 
-            // STEP A: Click the correct payment radio button
-            const termMap = {
-                cod: ['Cash on Delivery', 'Pay on Delivery', 'Cash/Card on delivery'],
-                upi: ['UPI', 'BHIM UPI'],
-                card: ['Credit or debit card', 'Debit card', 'Credit card', 'Credit/Debit'],
-                netbanking: ['Net Banking', 'NetBanking'],
-                amazonpay: ['Amazon Pay']
+            // Scroll to bottom to ensure all payment options are rendered
+            await p.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+            await new Promise(res => setTimeout(res, 1500));
+            await p.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+            await new Promise(res => setTimeout(res, 500));
+
+            // Payment method keyword map — broad matching
+            const keywordMap = {
+                cod: ['cash on delivery', 'pay on delivery', 'cash/card on delivery', 'cod'],
+                upi: ['upi', 'scan and pay', 'bhim', 'gpay', 'phonepe', 'paytm'],
+                card: ['credit or debit', 'credit/debit', 'debit card', 'credit card', 'visa', 'mastercard'],
+                netbanking: ['net banking', 'netbanking'],
+                amazonpay: ['amazon pay']
             };
-            const terms = termMap[action.method] || [];
 
-            const radioClicked = await p.evaluate((terms) => {
+            const terms = keywordMap[action.method] || [];
+            console.log('[Payment] Looking for terms:', terms);
+
+            // STEP 1: Find and click the correct radio button using innerText of parent container
+            const radioResult = await p.evaluate((terms) => {
                 const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                console.log('Found radios:', radios.length);
+
                 for (const radio of radios) {
-                    const container = radio.closest('label') ||
-                                      document.querySelector(`label[for="${radio.id}"]`) ||
-                                      radio.parentElement?.parentElement;
-                    const text = (container?.textContent || '').trim();
-                    for (const term of terms) {
-                        if (text.toLowerCase().includes(term.toLowerCase())) {
-                            radio.scrollIntoView({ block: 'center' });
-                            radio.click();
-                            return `radio: ${text.slice(0, 40)}`;
+                    // Walk up DOM to get meaningful text context
+                    let textContainer = radio.parentElement;
+                    let containerText = '';
+                    let depth = 0;
+
+                    while (textContainer && depth < 5) {
+                        containerText = (textContainer.innerText || textContainer.textContent || '').toLowerCase().trim();
+                        if (containerText.length > 3) break;
+                        textContainer = textContainer.parentElement;
+                        depth++;
+                    }
+
+                    const matched = terms.some(t => containerText.includes(t.toLowerCase()));
+                    if (matched) {
+                        radio.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                        // Click the radio itself
+                        radio.click();
+                        // Also try clicking its label if exists
+                        if (radio.id) {
+                            const label = document.querySelector(`label[for="${radio.id}"]`);
+                            if (label) label.click();
                         }
+                        return {
+                            success: true,
+                            text: containerText.slice(0, 80),
+                            checked: radio.checked
+                        };
                     }
                 }
-                const all = Array.from(document.querySelectorAll('div, span, label, p'));
-                for (const el of all) {
-                    if (el.children.length > 3) continue;
-                    const text = (el.textContent || '').trim();
-                    for (const term of terms) {
-                        if (text.toLowerCase().includes(term.toLowerCase()) && el.offsetWidth > 0 && text.length < 80) {
-                            el.scrollIntoView({ block: 'center' });
-                            el.click();
-                            return `fallback: ${text.slice(0, 40)}`;
-                        }
+
+                // Fallback: find by visible list item text
+                const listItems = Array.from(document.querySelectorAll('li, .a-row, div[class*="payment"]'));
+                for (const item of listItems) {
+                    const text = (item.innerText || '').toLowerCase();
+                    const radio = item.querySelector('input[type="radio"]');
+                    if (!radio) continue;
+                    const matched = terms.some(t => text.includes(t.toLowerCase()));
+                    if (matched && item.offsetWidth > 0) {
+                        radio.scrollIntoView({ block: 'center' });
+                        radio.click();
+                        return {
+                            success: true,
+                            text: text.slice(0, 80),
+                            checked: radio.checked,
+                            fallback: true
+                        };
                     }
                 }
-                return null;
+
+                return { success: false, radiosFound: radios.length };
             }, terms);
 
-            console.log('[Agent] Radio click result:', radioClicked);
-            await new Promise(res => setTimeout(res, 2000));
+            console.log('[Payment] Radio click result:', JSON.stringify(radioResult));
 
-            // Handle UPI ID
-            if (action.method === 'upi' && action.upiId) {
-                try {
-                    await p.waitForSelector('input[placeholder*="UPI"], input[placeholder*="VPA"], input[name*="upi"]', { timeout: 4000 });
-                    const inp = await p.$('input[placeholder*="UPI"], input[placeholder*="VPA"], input[name*="upi"]');
-                    if (inp) { await inp.click({ clickCount: 3 }); await inp.type(action.upiId, { delay: 40 }); }
-                } catch { console.log('[Agent] No UPI input found'); }
-                await new Promise(res => setTimeout(res, 500));
+            if (!radioResult.success) {
+                console.log('[Payment] Could not find radio — proceeding anyway to try continue button');
             }
 
-            // STEP B: Click "Use this payment method" / "Continue"
-            console.log('[Agent] Clicking Use this payment method...');
+            // Wait for Amazon JS to react to radio selection
+            await new Promise(res => setTimeout(res, 2000));
+
+            // Verify radio is actually checked
+            if (radioResult.success) {
+                const verified = await p.evaluate((terms) => {
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]:checked'));
+                    for (const r of radios) {
+                        const text = (r.closest('li, div')?.innerText || '').toLowerCase();
+                        if (terms.some(t => text.includes(t))) return true;
+                    }
+                    return false;
+                }, terms);
+                console.log('[Payment] Radio verified as checked:', verified);
+
+                // If not checked, try clicking again
+                if (!verified) {
+                    await p.evaluate((terms) => {
+                        const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        for (const radio of radios) {
+                            const text = (radio.closest('li, div, label')?.innerText || '').toLowerCase();
+                            if (terms.some(t => text.includes(t))) {
+                                radio.checked = true;
+                                radio.dispatchEvent(new Event('change', { bubbles: true }));
+                                radio.dispatchEvent(new Event('click', { bubbles: true }));
+                                return;
+                            }
+                        }
+                    }, terms);
+                    await new Promise(res => setTimeout(res, 1000));
+                }
+            }
+
+            // Handle UPI ID if needed
+            if (action.method === 'upi' && action.upiId) {
+                try {
+                    const upiInput = await p.$('input[placeholder*="UPI"], input[placeholder*="VPA"], input[data-testid*="upi"]');
+                    if (upiInput) {
+                        await upiInput.click({ clickCount: 3 });
+                        await upiInput.type(action.upiId, { delay: 50 });
+                        await new Promise(res => setTimeout(res, 500));
+                    }
+                } catch { console.log('[Payment] No UPI input field found'); }
+            }
+
+            // STEP 2: Find and click "Use this payment method" button
+            console.log('[Payment] Looking for continue/use-payment button...');
             let continueClicked = false;
 
-            for (let attempt = 0; attempt < 5 && !continueClicked; attempt++) {
+            for (let attempt = 0; attempt < 8 && !continueClicked; attempt++) {
+                await new Promise(res => setTimeout(res, 800));
+
                 continueClicked = await p.evaluate(() => {
-                    const targets = [
-                        '#pp-oyyD-25',
-                        '#submitOrderButtonId',
-                        'input[name="ppw-widgetEvent:SetPaymentPlanSelectAction"]',
-                        '.pmts-submit-btn',
-                        'input[data-testid*="payment"][type="submit"]',
+                    const matchTexts = [
+                        'use this payment method',
+                        'use this payment',
+                        'continue',
+                        'proceed',
+                        'next'
                     ];
-                    for (const sel of targets) {
-                        const el = document.querySelector(sel);
-                        if (el && el.offsetWidth > 0) {
-                            el.scrollIntoView({ block: 'center' });
-                            el.click();
-                            return `selector: ${sel}`;
+
+                    // Strategy 1: input[type=submit] — most reliable on Amazon
+                    const allSubmits = Array.from(document.querySelectorAll('input[type="submit"]'));
+                    for (const btn of allSubmits) {
+                        const val = (btn.value || '').toLowerCase().trim();
+                        if (matchTexts.some(t => val.includes(t)) && btn.offsetWidth > 0 && !btn.disabled) {
+                            btn.scrollIntoView({ block: 'center' });
+                            btn.click();
+                            return `input[submit]: ${val.slice(0, 50)}`;
                         }
                     }
-                    const clickableTexts = ['use this payment method', 'use this payment', 'continue', 'proceed'];
-                    const all = Array.from(document.querySelectorAll(
-                        'input[type="submit"], button, .a-button-primary input, .a-button-primary button'
-                    ));
-                    for (const el of all) {
-                        const text = (el.value || el.textContent || '').toLowerCase().trim();
-                        if (clickableTexts.some(t => text.includes(t)) && el.offsetWidth > 0) {
-                            el.scrollIntoView({ block: 'center' });
-                            el.click();
-                            return `text: ${text.slice(0, 40)}`;
+
+                    // Strategy 2: button elements
+                    const allBtns = Array.from(document.querySelectorAll('button'));
+                    for (const btn of allBtns) {
+                        const text = (btn.innerText || btn.textContent || '').toLowerCase().trim();
+                        if (matchTexts.some(t => text.includes(t)) && btn.offsetWidth > 0 && !btn.disabled) {
+                            btn.scrollIntoView({ block: 'center' });
+                            btn.click();
+                            return `button: ${text.slice(0, 50)}`;
                         }
                     }
+
+                    // Strategy 3: .a-button-primary wrapper
+                    const primaryBtns = Array.from(document.querySelectorAll('.a-button-primary'));
+                    for (const wrapper of primaryBtns) {
+                        const clickable = wrapper.querySelector('input[type="submit"], button, a') || wrapper;
+                        if (clickable.offsetWidth > 0) {
+                            clickable.scrollIntoView({ block: 'center' });
+                            clickable.click();
+                            return `a-button-primary: ${(clickable.value || clickable.textContent || '').slice(0, 40)}`;
+                        }
+                    }
+
+                    // Strategy 4: Any span inside .a-button that contains matching text
+                    const spans = Array.from(document.querySelectorAll('.a-button-text'));
+                    for (const span of spans) {
+                        const text = (span.innerText || '').toLowerCase().trim();
+                        if (matchTexts.some(t => text.includes(t)) && span.offsetWidth > 0) {
+                            const btn = span.closest('.a-button') || span.closest('button') || span;
+                            btn.click();
+                            return `span: ${text.slice(0, 50)}`;
+                        }
+                    }
+
                     return null;
                 });
 
-                if (!continueClicked) {
-                    console.log(`[Agent] Continue not found on attempt ${attempt + 1} — scrolling`);
-                    await p.evaluate(() => window.scrollBy(0, 400));
-                    await new Promise(res => setTimeout(res, 1200));
+                if (continueClicked) {
+                    console.log(`[Payment] Continue button clicked on attempt ${attempt + 1}:`, continueClicked);
+                } else {
+                    // Scroll progressively to find button
+                    await p.evaluate((attempt) => window.scrollBy(0, 250 + attempt * 100), attempt);
+                    console.log(`[Payment] Attempt ${attempt + 1}: button not found, scrolling`);
                 }
             }
 
-            console.log('[Agent] Continue click result:', continueClicked);
-
             if (!continueClicked) {
-                return { success: false, error: 'Could not find "Use this payment method" button. Please click it manually in Chrome.' };
+                return {
+                    success: false,
+                    error: 'Could not click "Use this payment method". Please click it manually in Chrome.'
+                };
             }
 
-            // STEP C: Wait for navigation to order review page
-            await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {
-                console.log('[Agent] No navigation after payment — may already be on review page');
+            // STEP 3: Wait for navigation to order review page
+            await p.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {
+                console.log('[Payment] No navigation detected — may already be on review page');
             });
             await new Promise(res => setTimeout(res, 2000));
 
             const finalUrl = p.url();
             const onReviewPage = await p.evaluate(() => {
-                const body = document.body.innerText.toLowerCase();
+                const body = (document.body.innerText || '').toLowerCase();
                 return body.includes('place your order') ||
                        body.includes('order total') ||
                        !!document.querySelector('#submitOrderButtonId') ||
                        !!document.querySelector('input[name="placeYourOrder1"]');
             }).catch(() => false);
 
-            console.log('[Agent] Review page:', onReviewPage, '| URL:', finalUrl);
+            console.log('[Payment] On review page:', onReviewPage, '| URL:', finalUrl.slice(0, 80));
 
+            // Pop Buddy back to center for final approval
             positionWindowCenter();
             if (global.mainWindowRef && !global.mainWindowRef.isDestroyed()) {
                 global.mainWindowRef.show();
@@ -1454,7 +1559,12 @@ async function executeAgentAction(action) {
                 setTimeout(() => { global.mainWindowRef?.setAlwaysOnTop(false); }, 2000);
             }
 
-            return { success: true, paymentSelected: action.method, onReviewPage, currentUrl: finalUrl };
+            return {
+                success: true,
+                paymentSelected: action.method,
+                onReviewPage,
+                currentUrl: finalUrl
+            };
         }
 
         if (action.type === 'amazon_place_order') {

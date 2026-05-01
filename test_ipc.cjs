@@ -1,0 +1,1 @@
+const { ipcRenderer } = require('electron'); if (ipcRenderer) { console.log('Renderer object available in this node script'); } else { console.log('Not available'); }

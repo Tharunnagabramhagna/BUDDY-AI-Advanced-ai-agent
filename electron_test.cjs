@@ -1,0 +1,1 @@
+const { app, BrowserWindow, ipcMain } = require('electron'); console.log('This is just a dummy node script to show require is working');

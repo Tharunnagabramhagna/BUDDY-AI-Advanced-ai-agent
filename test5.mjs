@@ -1,0 +1,1 @@
+import WebSocket from 'ws'; const ws = new WebSocket('ws://localhost:5173'); ws.on('open', () => { ws.send(JSON.stringify({ type: 'amazon_select_payment', method: 'cod' })); }); ws.on('message', data => console.log(data.toString()));
