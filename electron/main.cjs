@@ -5,6 +5,13 @@ console.log("MAIN FILE EXECUTED");
 console.log("OPENAI_API_KEY loaded:", process.env.OPENAI_API_KEY ? "YES" : "NO")
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain } = require("electron")
 app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('no-sandbox')
+app.commandLine.appendSwitch('disable-gpu')
+app.commandLine.appendSwitch('disable-gpu-compositing')
+app.commandLine.appendSwitch('disable-gpu-sandbox')
+app.commandLine.appendSwitch('disable-software-rasterizer')
+app.commandLine.appendSwitch('use-gl', 'swiftshader')
+app.commandLine.appendSwitch('use-angle', 'swiftshader')
 const fs = require("fs")
 const http = require("http")
 const { exec } = require("child_process")
@@ -1315,7 +1322,8 @@ async function executeAgentAction(action) {
         }
 
         if (action.type === 'amazon_select_payment') {
-            console.log('[Payment] Starting payment selection:', action.method);
+            const paymentMethod = (action.method || '').toLowerCase();
+            console.log('[Payment] Starting payment selection:', paymentMethod);
             const p = global.activePage;
             if (!p || p.isClosed()) return { success: false, error: 'No active browser session' };
 
@@ -1342,108 +1350,141 @@ async function executeAgentAction(action) {
                 amazonpay: ['amazon pay']
             };
 
-            const terms = keywordMap[action.method] || [];
+            const terms = keywordMap[paymentMethod] || [];
             console.log('[Payment] Looking for terms:', terms);
 
-            // STEP 1: Find and click the correct radio button using innerText of parent container
-            const radioResult = await p.evaluate((terms) => {
-                const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                console.log('Found radios:', radios.length);
-
-                for (const radio of radios) {
-                    // Walk up DOM to get meaningful text context
-                    let textContainer = radio.parentElement;
-                    let containerText = '';
+            // STEP 1: Find the correct payment radio by nearby text and click it with Puppeteer's mouse.
+            const radioTarget = await p.evaluate((terms) => {
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const rect = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
+                    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                };
+                const rectFor = (el) => {
+                    if (!el) return null;
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width <= 0 || rect.height <= 0) return null;
+                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                };
+                const contextFor = (radio) => {
+                    let container = radio.parentElement;
+                    let text = '';
                     let depth = 0;
-
-                    while (textContainer && depth < 5) {
-                        containerText = (textContainer.innerText || textContainer.textContent || '').toLowerCase().trim();
-                        if (containerText.length > 3) break;
-                        textContainer = textContainer.parentElement;
+                    while (container && depth < 7) {
+                        text = (container.innerText || container.textContent || '').toLowerCase().trim();
+                        if (text.length > 3) break;
+                        container = container.parentElement;
                         depth++;
                     }
-
-                    const matched = terms.some(t => containerText.includes(t.toLowerCase()));
-                    if (matched) {
-                        radio.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                        // Click the radio itself
-                        radio.click();
-                        // Also try clicking its label if exists
-                        if (radio.id) {
-                            const label = document.querySelector(`label[for="${radio.id}"]`);
-                            if (label) label.click();
-                        }
-                        return {
-                            success: true,
-                            text: containerText.slice(0, 80),
-                            checked: radio.checked
-                        };
+                    return { container, text };
+                };
+                const targetFor = (radio, container) => {
+                    if (isVisible(radio)) return { el: radio, source: 'radio' };
+                    if (radio.id) {
+                        const label = document.querySelector(`label[for="${CSS.escape(radio.id)}"]`);
+                        if (isVisible(label)) return { el: label, source: 'label' };
                     }
+                    const label = radio.closest('label');
+                    if (isVisible(label)) return { el: label, source: 'closest-label' };
+                    const textEl = container?.querySelector?.('.a-button-text, label, span');
+                    if (isVisible(textEl)) return { el: textEl, source: 'text' };
+                    return { el: container || radio, source: 'container' };
+                };
+                const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+
+                for (const radio of radios) {
+                    const { container, text } = contextFor(radio);
+                    if (!terms.some(t => text.includes(t.toLowerCase()))) continue;
+                    const { el, source } = targetFor(radio, container);
+                    el.scrollIntoView({ block: 'center', inline: 'center' });
+                    return { success: true, text: text.slice(0, 80), checked: radio.checked, source, rect: rectFor(el) };
                 }
 
-                // Fallback: find by visible list item text
                 const listItems = Array.from(document.querySelectorAll('li, .a-row, div[class*="payment"]'));
                 for (const item of listItems) {
-                    const text = (item.innerText || '').toLowerCase();
+                    const text = (item.innerText || item.textContent || '').toLowerCase();
+                    if (!terms.some(t => text.includes(t.toLowerCase()))) continue;
                     const radio = item.querySelector('input[type="radio"]');
                     if (!radio) continue;
-                    const matched = terms.some(t => text.includes(t.toLowerCase()));
-                    if (matched && item.offsetWidth > 0) {
-                        radio.scrollIntoView({ block: 'center' });
-                        radio.click();
-                        return {
-                            success: true,
-                            text: text.slice(0, 80),
-                            checked: radio.checked,
-                            fallback: true
-                        };
-                    }
+                    const { el, source } = targetFor(radio, item);
+                    el.scrollIntoView({ block: 'center', inline: 'center' });
+                    return { success: true, text: text.slice(0, 80), checked: radio.checked, source, rect: rectFor(el), fallback: true };
                 }
 
                 return { success: false, radiosFound: radios.length };
             }, terms);
 
-            console.log('[Payment] Radio click result:', JSON.stringify(radioResult));
+            console.log('[Payment] Radio target:', JSON.stringify(radioTarget));
 
-            if (!radioResult.success) {
-                console.log('[Payment] Could not find radio — proceeding anyway to try continue button');
+            if (!radioTarget.success || !radioTarget.rect) {
+                return {
+                    success: false,
+                    error: `Could not find the ${paymentMethod || 'selected'} payment option. Please select it manually in Chrome.`
+                };
             }
 
-            // Wait for Amazon JS to react to radio selection
-            await new Promise(res => setTimeout(res, 2000));
+            await p.mouse.click(radioTarget.rect.x, radioTarget.rect.y);
 
-            // Verify radio is actually checked
-            if (radioResult.success) {
-                const verified = await p.evaluate((terms) => {
-                    const radios = Array.from(document.querySelectorAll('input[type="radio"]:checked'));
-                    for (const r of radios) {
-                        const text = (r.closest('li, div')?.innerText || '').toLowerCase();
-                        if (terms.some(t => text.includes(t))) return true;
+            // Wait for Amazon JS to react to radio selection
+            await new Promise(res => setTimeout(res, 3000));
+
+            let verified = await p.evaluate((terms) => {
+                const checkedRadios = Array.from(document.querySelectorAll('input[type="radio"]:checked'));
+                for (const radio of checkedRadios) {
+                    let el = radio.parentElement;
+                    let depth = 0;
+                    while (el && depth < 7) {
+                        const text = (el.innerText || el.textContent || '').toLowerCase();
+                        if (terms.some(t => text.includes(t.toLowerCase()))) return true;
+                        el = el.parentElement;
+                        depth++;
+                    }
+                }
+                return false;
+            }, terms);
+            console.log('[Payment] Radio verified as checked:', verified);
+
+            if (!verified) {
+                verified = await p.evaluate((terms) => {
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    for (const radio of radios) {
+                        let el = radio.parentElement;
+                        let depth = 0;
+                        let matched = false;
+                        while (el && depth < 7) {
+                            const text = (el.innerText || el.textContent || '').toLowerCase();
+                            if (terms.some(t => text.includes(t.toLowerCase()))) {
+                                matched = true;
+                                break;
+                            }
+                            el = el.parentElement;
+                            depth++;
+                        }
+                        if (!matched) continue;
+                        radio.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                        radio.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                        radio.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        radio.checked = true;
+                        radio.dispatchEvent(new Event('input', { bubbles: true }));
+                        radio.dispatchEvent(new Event('change', { bubbles: true }));
+                        return radio.checked;
                     }
                     return false;
                 }, terms);
-                console.log('[Payment] Radio verified as checked:', verified);
+                await new Promise(res => setTimeout(res, 3000));
+                console.log('[Payment] Radio verified after event fallback:', verified);
+            }
 
-                // If not checked, try clicking again
-                if (!verified) {
-                    await p.evaluate((terms) => {
-                        const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                        for (const radio of radios) {
-                            const text = (radio.closest('li, div, label')?.innerText || '').toLowerCase();
-                            if (terms.some(t => text.includes(t))) {
-                                radio.checked = true;
-                                radio.dispatchEvent(new Event('change', { bubbles: true }));
-                                radio.dispatchEvent(new Event('click', { bubbles: true }));
-                                return;
-                            }
-                        }
-                    }, terms);
-                    await new Promise(res => setTimeout(res, 1000));
-                }
+            if (!verified) {
+                return {
+                    success: false,
+                    error: `Could not select the ${paymentMethod || 'selected'} payment option. Please select it manually in Chrome.`
+                };
             }
 
             // Handle UPI ID if needed
-            if (action.method === 'upi' && action.upiId) {
+            if (paymentMethod === 'upi' && action.upiId) {
                 try {
                     const upiInput = await p.$('input[placeholder*="UPI"], input[placeholder*="VPA"], input[data-testid*="upi"]');
                     if (upiInput) {
@@ -1464,56 +1505,31 @@ async function executeAgentAction(action) {
                 continueClicked = await p.evaluate(() => {
                     const matchTexts = [
                         'use this payment method',
-                        'use this payment',
-                        'continue',
-                        'proceed',
-                        'next'
+                        'use this payment'
                     ];
-
-                    // Strategy 1: input[type=submit] — most reliable on Amazon
-                    const allSubmits = Array.from(document.querySelectorAll('input[type="submit"]'));
-                    for (const btn of allSubmits) {
-                        const val = (btn.value || '').toLowerCase().trim();
-                        if (matchTexts.some(t => val.includes(t)) && btn.offsetWidth > 0 && !btn.disabled) {
-                            btn.scrollIntoView({ block: 'center' });
-                            btn.click();
-                            return `input[submit]: ${val.slice(0, 50)}`;
+                    const isVisible = (el) => {
+                        if (!el) return false;
+                        const rect = el.getBoundingClientRect();
+                        const style = window.getComputedStyle(el);
+                        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                    };
+                    const buttonText = (el) => (el.value || el.innerText || el.textContent || '').toLowerCase().trim();
+                    const clickTarget = (el) => {
+                        if (el.classList?.contains('a-button-text')) {
+                            return el.closest('.a-button')?.querySelector('input[type="submit"], button, a') || el.closest('.a-button') || el;
                         }
+                        return el;
+                    };
+                    const candidates = Array.from(document.querySelectorAll('input[type="submit"], button, a, .a-button-text'));
+                    for (const candidate of candidates) {
+                        const text = buttonText(candidate);
+                        if (!matchTexts.some(t => text.includes(t))) continue;
+                        const clickable = clickTarget(candidate);
+                        if (!isVisible(clickable) || clickable.disabled) continue;
+                        clickable.scrollIntoView({ block: 'center', inline: 'center' });
+                        clickable.click();
+                        return `${candidate.tagName.toLowerCase()}: ${text.slice(0, 60)}`;
                     }
-
-                    // Strategy 2: button elements
-                    const allBtns = Array.from(document.querySelectorAll('button'));
-                    for (const btn of allBtns) {
-                        const text = (btn.innerText || btn.textContent || '').toLowerCase().trim();
-                        if (matchTexts.some(t => text.includes(t)) && btn.offsetWidth > 0 && !btn.disabled) {
-                            btn.scrollIntoView({ block: 'center' });
-                            btn.click();
-                            return `button: ${text.slice(0, 50)}`;
-                        }
-                    }
-
-                    // Strategy 3: .a-button-primary wrapper
-                    const primaryBtns = Array.from(document.querySelectorAll('.a-button-primary'));
-                    for (const wrapper of primaryBtns) {
-                        const clickable = wrapper.querySelector('input[type="submit"], button, a') || wrapper;
-                        if (clickable.offsetWidth > 0) {
-                            clickable.scrollIntoView({ block: 'center' });
-                            clickable.click();
-                            return `a-button-primary: ${(clickable.value || clickable.textContent || '').slice(0, 40)}`;
-                        }
-                    }
-
-                    // Strategy 4: Any span inside .a-button that contains matching text
-                    const spans = Array.from(document.querySelectorAll('.a-button-text'));
-                    for (const span of spans) {
-                        const text = (span.innerText || '').toLowerCase().trim();
-                        if (matchTexts.some(t => text.includes(t)) && span.offsetWidth > 0) {
-                            const btn = span.closest('.a-button') || span.closest('button') || span;
-                            btn.click();
-                            return `span: ${text.slice(0, 50)}`;
-                        }
-                    }
-
                     return null;
                 });
 
@@ -1561,7 +1577,7 @@ async function executeAgentAction(action) {
 
             return {
                 success: true,
-                paymentSelected: action.method,
+                paymentSelected: paymentMethod,
                 onReviewPage,
                 currentUrl: finalUrl
             };
@@ -1834,14 +1850,10 @@ async function executeAgentAction(action) {
     } catch (err) {
         console.error('❌ AGENT ERROR:', err);
         if (err.message === 'LOGIN_REQUIRED') {
-            (async () => {
-                const loggedIn = await waitForLoginComplete(page);
-                if (loggedIn && !page.isClosed()) {
-                    console.log('[Agent] Login complete, resuming...');
-                    await executeAgentAction({ ...action, page }).catch(e => console.error('Resume error:', e));
-                }
-            })().catch(e => console.error('Background task error:', e));
-            return { success: false, error: 'Please log in in the browser. I will resume automatically after login.' };
+            return {
+                success: false,
+                error: 'Please log in in the browser, then click "I\'ve Logged In" in Buddy.'
+            };
         }
         return { success: false, error: err.message };
     } finally {
@@ -1987,7 +1999,7 @@ let mainWindow
 let tray
 let sttProcess = null
 let isCreatingWindow = false
-const DEV_SERVER_URL = "http://localhost:5173"
+const DEV_SERVER_URL = "http://127.0.0.1:5173"
 const DIST_INDEX_PATH = path.join(__dirname, "..", "dist", "index.html")
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -2046,21 +2058,40 @@ async function loadRenderer() {
         throw new Error("Cannot load renderer without an active window.")
     }
 
-    const canUseDevServer = await isDevServerAvailable(DEV_SERVER_URL)
+    // Retry loop — Vite may still be booting when Electron starts
+    let loaded = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 10
 
-    if (canUseDevServer) {
-        console.log("Loading Buddy from dev server")
-        await mainWindow.loadURL(DEV_SERVER_URL)
-        return
+    while (!loaded && attempts < MAX_ATTEMPTS) {
+        attempts++
+        const canUseDevServer = await isDevServerAvailable(DEV_SERVER_URL)
+
+        if (canUseDevServer) {
+            try {
+                console.log(`Loading Buddy from dev server (attempt ${attempts})`)
+                await mainWindow.loadURL(DEV_SERVER_URL)
+                loaded = true
+                console.log("Buddy renderer loaded successfully")
+                return
+            } catch (err) {
+                console.log(`Renderer load failed attempt ${attempts}:`, err.message)
+                await new Promise(resolve => setTimeout(resolve, 1000))
+            }
+        } else {
+            console.log(`Dev server not available yet (attempt ${attempts}/${MAX_ATTEMPTS})`)
+            await new Promise(resolve => setTimeout(resolve, 1000))
+        }
     }
 
-    if (fs.existsSync(DIST_INDEX_PATH)) {
-        console.log("Loading Buddy from dist fallback")
-        await mainWindow.loadFile(DIST_INDEX_PATH)
-        return
+    if (!loaded) {
+        if (fs.existsSync(DIST_INDEX_PATH)) {
+            console.log("Loading Buddy from dist fallback")
+            await mainWindow.loadFile(DIST_INDEX_PATH)
+            return
+        }
+        throw new Error("No renderer source available. Start Vite or build the app first.")
     }
-
-    throw new Error("No renderer source available. Start Vite or build the app first.")
 }
 
 async function createWindow() {

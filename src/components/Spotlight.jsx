@@ -2036,13 +2036,8 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                         const goNext = () => {
                             const nextIdx = currentIdx + 1;
                             setMessages(prev => prev.map((m, mIdx) =>
-                                mIdx === i ? { ...m, currentIndex: nextIdx } : m
+                                mIdx === i ? { ...m, currentIndex: nextIdx, _highlightTriggered: false } : m
                             ));
-                            // Scroll browser to next product
-                            window.buddyAgent?.checkoutStep?.({
-                                type: 'amazon_scroll_to_product',
-                                index: nextIdx
-                            }).catch(() => {});
                         };
 
                         const handleBuy = async () => {
@@ -2083,9 +2078,9 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                         type: 'amazon_highlight_product',
                                         url: product.url
                                     }).then(() => {
-                                        window.electronAPI?.positionCenter?.();
+                                        window.electronAPI?.positionSide?.();
                                     }).catch(() => {
-                                        window.electronAPI?.positionCenter?.();
+                                        window.electronAPI?.positionSide?.();
                                     });
                                 }, 0);
                                 setMessages(prev => prev.map((m, mIdx) =>
@@ -2317,7 +2312,7 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                             <PaymentOptionsCard
                                 key={i}
                                 platform={msg.platform || 'Amazon'}
-                                onSelect={async ({ method }) => {
+                                onSelect={async ({ method, upiId }) => {
                                     setMessages(prev => prev.map((m, idx) =>
                                         idx === i
                                             ? { role: 'buddy', text: `⚡ Selecting ${method.toUpperCase()} payment...`, timestamp: Date.now() }
@@ -2325,7 +2320,8 @@ const ChatPanel = React.memo(({ chatOpen, isLoading, isTyping, messages = [], on
                                     ));
                                     const result = await window.buddyAgent.checkoutStep({
                                         type: 'amazon_select_payment',
-                                        method: method
+                                        method,
+                                        upiId
                                     });
                                     if (result?.success) {
                                         setMessages(prev => [...prev, {
@@ -2889,6 +2885,8 @@ const Spotlight = React.memo(() => {
                 return;
             }
 
+            window.electronAPI?.positionCenter?.();
+
             // STEP 2: Login confirmed — run real search
             setMessages(prev => [...prev, {
                 role: "buddy",
@@ -2939,6 +2937,7 @@ const Spotlight = React.memo(() => {
                 _browserScrolled: false,
                 timestamp: Date.now()
             }]);
+            window.electronAPI?.positionCenter?.();
 
         } catch (err) {
             console.error("handleManualLoginDetected error:", err);
@@ -3002,7 +3001,7 @@ const Spotlight = React.memo(() => {
     useEffect(() => {
         // Reposition window when flow changes
         const isSidePhase = messages.some(m => ['await-login', 'product-selection'].includes(m.role));
-        const isCenterPhase = messages.some(m => ['final-confirm'].includes(m.role));
+        const isCenterPhase = messages.some(m => ['pre-checkout', 'payment-select', 'final-confirm'].includes(m.role));
 
         if (isCenterPhase) {
             window.electronAPI?.positionCenter?.();
@@ -3047,30 +3046,13 @@ const Spotlight = React.memo(() => {
             setMessages(prev => [...prev, msg]);
             window.focus();
         };
-        const sLogin   = () => { setMessages(p => [...p, { role: 'strict-login-popup',   timestamp: Date.now() }]); setChatOpen(true); };
-        const sProd    = (prod) => { setMessages(p => [...p, { role: 'strict-show-product', product: prod, timestamp: Date.now() }]); setChatOpen(true); };
-        const sPay     = () => { setMessages(p => [...p, { role: 'strict-ask-payment',    timestamp: Date.now() }]); setChatOpen(true); };
-        const sConfirm = () => { setMessages(p => [...p, { role: 'strict-final-approval', timestamp: Date.now() }]); setChatOpen(true); };
-        
-        
-        
-        
-        
 
         window.api.on("login-required", loginReqHandler);
         window.api.on("add-message", addMsgHandler);
-        window.api.on("show-login-popup", sLogin);
-        window.api.on("show-product", sProd);
-        window.api.on("ask-payment", sPay);
-        window.api.on("final-approval", sConfirm);
         
         return () => {
             window.api.removeListener("login-required", loginReqHandler);
             window.api.removeListener("add-message", addMsgHandler);
-            window.api.removeListener("show-login-popup", sLogin);
-            window.api.removeListener("show-product", sProd);
-            window.api.removeListener("ask-payment", sPay);
-            window.api.removeListener("final-approval", sConfirm);
         };
     }, []);
 
@@ -3082,19 +3064,7 @@ const Spotlight = React.memo(() => {
         }, 80);
     }, []);
 
-    const handlePaymentSelection = useCallback((index, option) => {
-        if (window.api) {
-            window.api.send("payment-selected", option);
-        }
-        setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, type: null, text: `âœ… Selected ${option}` } : m));
-    }, []);
 
-    const handleLegacyLoginApproval = useCallback((index) => {
-        if (window.api) {
-            window.api.send("login-approved");
-        }
-        setMessages(prev => prev.map((m, idx) => idx === index ? { ...m, role: 'buddy', text: 'âœ… Proceeding to login...' } : m));
-    }, []);
 
     useEffect(() => {
         document.body.style.overflow = 'hidden';
@@ -3598,8 +3568,3 @@ const SpotlightWithBoundary = (props) => (
 );
 
 export default SpotlightWithBoundary;
-
-
-
-// Test execution script appended
-setTimeout(() => { if (window.electronAPI) { window.electronAPI.executeAction({ type: 'amazon_select_payment', method: 'cod' }).then(res => console.log('EXECUTE ACTION RESULT:', res)); } }, 5000);
